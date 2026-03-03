@@ -1,6 +1,8 @@
-import { app, shell, BrowserWindow, ipcMain, Menu, MenuItem } from 'electron'
+import { app, shell, BrowserWindow, ipcMain, Menu } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
+import { initDatabase, closeDatabase } from './database'
+import { registerIpcHandlers } from './ipc'
 
 function createMenu(mainWindow: BrowserWindow): void {
   const isMac = process.platform === 'darwin'
@@ -176,6 +178,12 @@ function createWindow(): void {
 
 // App lifecycle
 app.whenReady().then(() => {
+  // Initialize database
+  initDatabase()
+
+  // Register IPC handlers
+  registerIpcHandlers()
+
   // Set app user model id for windows
   electronApp.setAppUserModelId('com.miclle.playground')
 
@@ -198,6 +206,7 @@ app.whenReady().then(() => {
 // Quit when all windows are closed, except on macOS
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
+    closeDatabase()
     app.quit()
   }
 })
