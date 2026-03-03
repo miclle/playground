@@ -3,12 +3,27 @@ import { electronAPI } from '@electron-toolkit/preload'
 
 // Types for IPC API
 export interface IpcApi {
-  // Menu events
-  onMenuEvent: (callback: (event: string) => void) => () => void
-
   // Shell operations
   shell: {
     openExternal: (url: string) => Promise<void>
+  }
+
+  // AI operations
+  ai: {
+    chat: (messages: { role: string; content: string }[]) => Promise<void>
+    abort: () => Promise<void>
+    onEvent: (callback: (event: unknown) => void) => () => void
+    onError: (callback: (error: string) => void) => () => void
+  }
+
+  // Config operations
+  config: {
+    saveAI: (data: { provider: string; apiKey: string; baseUrl?: string; model?: string }) => Promise<void>
+    loadAI: () => Promise<{ provider: string; apiKey: string; baseUrl?: string; model?: string } | null>
+    saveSandbox: (data: { apiKey: string; baseUrl?: string; template?: string }) => Promise<void>
+    loadSandbox: () => Promise<{ apiKey: string; baseUrl?: string; template?: string } | null>
+    saveStorage: (data: { type: string; s3?: { bucket: string; region: string }; github?: { token: string; repo: string } }) => Promise<void>
+    loadStorage: () => Promise<{ type: string; s3?: { bucket: string; region: string }; github?: { token: string; repo: string } } | null>
   }
 
   // Project operations
@@ -33,22 +48,6 @@ export interface IpcApi {
     add: (sessionId: string, role: 'user' | 'assistant' | 'system', content: string) => Promise<import('../shared/types').Message>
     list: (sessionId: string) => Promise<import('../shared/types').Message[]>
   }
-
-  // Settings operations
-  settings: {
-    get: (key: string) => Promise<string | null>
-    set: (key: string, value: string) => Promise<void>
-  }
-
-  // Profile operations
-  profile: {
-    save: (profile: unknown) => Promise<void>
-    load: (id: string) => Promise<unknown>
-    delete: (id: string) => Promise<void>
-    listIds: () => Promise<string[]>
-    getActive: () => Promise<string | null>
-    setActive: (id: string) => Promise<void>
-  }
 }
 
 // Custom APIs for renderer
@@ -58,27 +57,35 @@ const api: IpcApi = {
     openExternal: (url) => ipcRenderer.invoke('shell:openExternal', url)
   },
 
-  // Menu event listeners
-  onMenuEvent: (callback) => {
-    ipcRenderer.on('menu:new-project', () => callback('new-project'))
-    ipcRenderer.on('menu:open-project', () => callback('open-project'))
-    ipcRenderer.on('menu:save', () => callback('save'))
-    ipcRenderer.on('menu:toggle-file-tree', () => callback('toggle-file-tree'))
-    ipcRenderer.on('menu:toggle-chat', () => callback('toggle-chat'))
-    ipcRenderer.on('menu:toggle-bottom-panel', () => callback('toggle-bottom-panel'))
-    return () => {
-      ipcRenderer.removeAllListeners('menu:new-project')
-      ipcRenderer.removeAllListeners('menu:open-project')
-      ipcRenderer.removeAllListeners('menu:save')
-      ipcRenderer.removeAllListeners('menu:toggle-file-tree')
-      ipcRenderer.removeAllListeners('menu:toggle-chat')
-      ipcRenderer.removeAllListeners('menu:toggle-bottom-panel')
+  // AI operations
+  ai: {
+    chat: (messages) => ipcRenderer.invoke('ai:chat', messages),
+    abort: () => ipcRenderer.invoke('ai:chat:abort'),
+    onEvent: (callback) => {
+      const handler = (_event: unknown, data: unknown) => callback(data)
+      ipcRenderer.on('ai:chat:event', handler)
+      return () => ipcRenderer.removeListener('ai:chat:event', handler)
+    },
+    onError: (callback) => {
+      const handler = (_event: unknown, error: string) => callback(error)
+      ipcRenderer.on('ai:chat:error', handler)
+      return () => ipcRenderer.removeListener('ai:chat:error', handler)
     }
+  },
+
+  // Config operations
+  config: {
+    saveAI: (data) => ipcRenderer.invoke('config:save:ai', data),
+    loadAI: () => ipcRenderer.invoke('config:load:ai'),
+    saveSandbox: (data) => ipcRenderer.invoke('config:save:sandbox', data),
+    loadSandbox: () => ipcRenderer.invoke('config:load:sandbox'),
+    saveStorage: (data) => ipcRenderer.invoke('config:save:storage', data),
+    loadStorage: () => ipcRenderer.invoke('config:load:storage')
   },
 
   // Project operations
   project: {
-    create: (data: { name: string; description?: string }) => ipcRenderer.invoke('project:create', data),
+    create: (data) => ipcRenderer.invoke('project:create', data),
     get: (id) => ipcRenderer.invoke('project:get', id),
     list: () => ipcRenderer.invoke('project:list'),
     update: (id, data) => ipcRenderer.invoke('project:update', id, data),
@@ -97,22 +104,6 @@ const api: IpcApi = {
   message: {
     add: (sessionId, role, content) => ipcRenderer.invoke('message:add', sessionId, role, content),
     list: (sessionId) => ipcRenderer.invoke('message:list', sessionId)
-  },
-
-  // Settings operations
-  settings: {
-    get: (key) => ipcRenderer.invoke('settings:get', key),
-    set: (key, value) => ipcRenderer.invoke('settings:set', key, value)
-  },
-
-  // Profile operations
-  profile: {
-    save: (profile) => ipcRenderer.invoke('profile:save', profile),
-    load: (id) => ipcRenderer.invoke('profile:load', id),
-    delete: (id) => ipcRenderer.invoke('profile:delete', id),
-    listIds: () => ipcRenderer.invoke('profile:listIds'),
-    getActive: () => ipcRenderer.invoke('profile:getActive'),
-    setActive: (id) => ipcRenderer.invoke('profile:setActive', id)
   }
 }
 

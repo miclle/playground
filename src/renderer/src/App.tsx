@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { Code } from 'lucide-react'
 import { TitleBar } from './components/TitleBar'
 import { FileTree } from './components/FileTree'
@@ -14,6 +14,13 @@ interface Project {
   name: string
   created_at: string
   updated_at: string
+}
+
+interface FileNode {
+  name: string
+  path: string
+  type: 'file' | 'folder'
+  children?: FileNode[]
 }
 
 function App() {
@@ -32,6 +39,20 @@ function App() {
 
   // Current project
   const [currentProject, setCurrentProject] = useState<Project | null>(null)
+  const [projectFiles, setProjectFiles] = useState<FileNode[]>([])
+
+  // Load last project on mount
+  useEffect(() => {
+    const loadLastProject = async () => {
+      const projects = await window.api?.project.list()
+      if (projects && projects.length > 0) {
+        // Load the most recent project
+        const lastProject = projects[0] as Project
+        setCurrentProject(lastProject)
+      }
+    }
+    loadLastProject()
+  }, [])
 
   // Resize handlers
   const handleLeftResize = useCallback((delta: number) => {
@@ -50,6 +71,26 @@ function App() {
   const handleSelectProject = (project: Project) => {
     setCurrentProject(project)
     setShowProjectSelector(false)
+    // TODO: Load project files from sandbox
+    setProjectFiles([])
+  }
+
+  // File selection
+  const handleFileSelect = (file: FileNode) => {
+    // TODO: Load file content into editor
+    console.log('Selected file:', file.path)
+  }
+
+  // Refresh files
+  const handleRefreshFiles = () => {
+    // TODO: Refresh files from sandbox
+    console.log('Refresh files')
+  }
+
+  // New file
+  const handleNewFile = () => {
+    // TODO: Create new file
+    console.log('New file')
   }
 
   return (
@@ -68,7 +109,14 @@ function App() {
           className="flex-shrink-0 bg-muted/30 overflow-hidden"
           style={{ width: leftPanelWidth }}
         >
-          <FileTree />
+          <FileTree
+            hasProject={!!currentProject}
+            projectName={currentProject?.name}
+            files={projectFiles}
+            onFileSelect={handleFileSelect}
+            onRefresh={handleRefreshFiles}
+            onNewFile={handleNewFile}
+          />
         </div>
 
         <ResizeHandle direction="horizontal" onResize={handleLeftResize} />
@@ -105,7 +153,10 @@ function App() {
               className="flex-shrink-0 bg-muted/30 overflow-hidden"
               style={{ width: rightPanelWidth }}
             >
-              <ChatPanel />
+              <ChatPanel
+                onOpenSettings={() => setShowSettings(true)}
+                hasProject={!!currentProject}
+              />
             </div>
           </>
         )}
