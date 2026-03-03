@@ -175,7 +175,42 @@ npm run lint:fix     # Fix linting issues
 
 # Type check
 npm run typecheck    # Run TypeScript compiler
+
+# Test
+npm run test         # Run all tests
+npm run test:watch   # Run tests in watch mode
+npm run test:coverage # Run tests with coverage
 ```
+
+## Testing Requirements
+
+**IMPORTANT**: All code changes must include appropriate tests, and all tests must pass before committing.
+
+### Test Framework
+- **Vitest** is used as the test framework
+- **@testing-library/react** for React component testing
+- **happy-dom** as the test environment
+
+### Test File Conventions
+- Test files should be named `*.test.ts` or `*.test.tsx`
+- Place test files next to the source files they test
+- Use `describe`/`it` blocks for organization
+
+### What to Test
+- Utility functions (e.g., `cn`, formatters)
+- Business logic and data transformations
+- React component behavior (user interactions, state changes)
+- IPC communication patterns (when possible without native modules)
+
+### Running Tests
+```bash
+npm run test           # Run all tests once
+npm run test:watch     # Run tests in watch mode during development
+npm run test:coverage  # Generate coverage report
+```
+
+### CI Integration
+Tests are run automatically in CI pipeline. All tests must pass before merging PRs.
 
 ## Build & Distribution
 
