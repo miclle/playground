@@ -1,5 +1,6 @@
 import { ipcMain } from 'electron'
 import * as db from '../database'
+import * as config from '../services/config'
 import type { Project, Session, Message } from '../../shared/types'
 
 // Register all IPC handlers
@@ -66,5 +67,32 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle('settings:set', async (_event, key: string, value: string): Promise<void> => {
     db.setSetting(key, value)
+  })
+
+  // ============ Configuration/Profile Handlers ============
+
+  ipcMain.handle('profile:save', async (_event, profile: config.Profile): Promise<void> => {
+    await config.saveProfile(profile)
+    config.registerProfileId(profile.id)
+  })
+
+  ipcMain.handle('profile:load', async (_event, id: string): Promise<config.Profile | null> => {
+    return config.loadProfile(id)
+  })
+
+  ipcMain.handle('profile:delete', async (_event, id: string): Promise<void> => {
+    await config.deleteProfile(id)
+  })
+
+  ipcMain.handle('profile:listIds', async (): Promise<string[]> => {
+    return config.listProfileIds()
+  })
+
+  ipcMain.handle('profile:getActive', async (): Promise<string | null> => {
+    return config.getActiveProfileId()
+  })
+
+  ipcMain.handle('profile:setActive', async (_event, id: string): Promise<void> => {
+    config.setActiveProfileId(id)
   })
 }

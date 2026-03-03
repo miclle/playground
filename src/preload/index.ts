@@ -34,6 +34,16 @@ export interface IpcApi {
     get: (key: string) => Promise<string | null>
     set: (key: string, value: string) => Promise<void>
   }
+
+  // Profile operations
+  profile: {
+    save: (profile: unknown) => Promise<void>
+    load: (id: string) => Promise<unknown>
+    delete: (id: string) => Promise<void>
+    listIds: () => Promise<string[]>
+    getActive: () => Promise<string | null>
+    setActive: (id: string) => Promise<void>
+  }
 }
 
 // Custom APIs for renderer
@@ -83,6 +93,16 @@ const api: IpcApi = {
   settings: {
     get: (key) => ipcRenderer.invoke('settings:get', key),
     set: (key, value) => ipcRenderer.invoke('settings:set', key, value)
+  },
+
+  // Profile operations
+  profile: {
+    save: (profile) => ipcRenderer.invoke('profile:save', profile),
+    load: (id) => ipcRenderer.invoke('profile:load', id),
+    delete: (id) => ipcRenderer.invoke('profile:delete', id),
+    listIds: () => ipcRenderer.invoke('profile:listIds'),
+    getActive: () => ipcRenderer.invoke('profile:getActive'),
+    setActive: (id) => ipcRenderer.invoke('profile:setActive', id)
   }
 }
 
