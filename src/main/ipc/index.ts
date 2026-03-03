@@ -2,11 +2,85 @@ import { ipcMain, shell, BrowserWindow } from 'electron'
 import * as db from '../database'
 import * as config from '../services/config'
 import { createAIService } from '../services/ai'
+import { createSandboxClient } from '../services/sandbox'
 import type { AIConfig } from '../services/ai/types'
-import type { Project, Session, Message } from '../../shared/types'
+import type { SandboxConfig } from '../services/sandbox/types'
+import type { Project, Session, Message, ChatEvent } from '../../shared/types'
+import type { ToolDefinition } from '../../shared/types'
 
-// Store active AI service and abort controller
-let activeAbortController: AbortController | null = null
+// Sandbox tools definition
+const SANDBOX_TOOLS: ToolDefinition[] = [
+  {
+    name: 'read_file',
+    description: 'Read a file from the sandbox filesystem',
+    parameters: {
+      type: 'object',
+      properties: {
+        path: { type: 'string', description: 'The path to the file to read' }
+      },
+      required: ['path']
+    }
+  },
+  {
+    name: 'write_file',
+    description: 'Write content to a file in the sandbox filesystem. Creates directories if needed.',
+    parameters: {
+      type: 'object',
+      properties: {
+        path: { type: 'string', description: 'The path to the file to write' },
+        content: { type: 'string', description: 'The content to write to the file' }
+      },
+      required: ['path', 'content']
+    }
+  },
+  {
+    name: 'list_dir',
+    description: 'List contents of a directory in the sandbox',
+    parameters: {
+      type: 'object',
+      properties: {
+        path: { type: 'string', description: 'The path to the directory to list' }
+      },
+      required: ['path']
+    }
+  },
+  {
+    name: 'execute_command',
+    description: 'Execute a shell command in the sandbox (e.g., npm install, npm run dev)',
+    parameters: {
+      type: 'object',
+      properties: {
+        command: { type: 'string', description: 'The command to execute' }
+      },
+      required: ['command']
+    }
+  },
+  {
+    name: 'mkdir',
+    description: 'Create a directory in the sandbox',
+    parameters: {
+      type: 'object',
+      properties: {
+        path: { type: 'string', description: 'The path of the directory to create' }
+      },
+      required: ['path']
+    }
+  },
+  {
+    name: 'delete_file',
+    description: 'Delete a file from the sandbox',
+    parameters: {
+      type: 'object',
+      properties: {
+        path: { type: 'string', description: 'The path to the file to delete' }
+      },
+      required: ['path']
+    }
+  }
+]
+
+// Store active sandbox ID (per project)
+const projectSandboxes = new Map<string, string>()
 
 // Register all IPC handlers
 export function registerIpcHandlers(): void {
@@ -18,8 +92,8 @@ export function registerIpcHandlers(): void {
 
   // ============ AI Handlers ============
 
-  // Send chat message to AI
-  ipcMain.handle('ai:chat', async (event, messages: { role: string; content: string }[]): Promise<void> => {
+  // Send chat message to AI with tool support (Agent Loop)
+  ipcMain.handle('ai:chat', async (event, messages: { role: string; content: string; toolCallId?: string }[], projectId?: string): Promise<void> => {
     const win = BrowserWindow.fromWebContents(event.sender)
     if (!win) return
 
@@ -45,6 +119,25 @@ export function registerIpcHandlers(): void {
       return
     }
 
+    // Get sandbox config
+    const sandboxConfigStr = db.getSetting('sandbox_config')
+    let sandboxConfig: SandboxConfig | null = null
+    if (sandboxConfigStr) {
+      try {
+        const sandboxConfigData = JSON.parse(sandboxConfigStr)
+        const sandboxApiKey = await config.getApiKey('sandbox_main')
+        if (sandboxApiKey) {
+          sandboxConfig = {
+            apiKey: sandboxApiKey,
+            baseUrl: sandboxConfigData.baseUrl,
+            timeout: 60000
+          }
+        }
+      } catch {
+        // Sandbox not configured, continue without it
+      }
+    }
+
     const aiConfig: AIConfig = {
       provider: aiConfigData.provider,
       apiKey,
@@ -54,21 +147,161 @@ export function registerIpcHandlers(): void {
 
     try {
       const aiService = createAIService(aiConfig)
-      activeAbortController = new AbortController()
+      aiService.setTools(SANDBOX_TOOLS)
 
-      // Convert messages to the format expected by AI service
+      const sandboxClient = sandboxConfig ? createSandboxClient(sandboxConfig) : null
+
+      // Get or create sandbox for project
+      let sandboxId: string | null = null
+      if (sandboxClient && projectId) {
+        sandboxId = projectSandboxes.get(projectId) || null
+        if (!sandboxId) {
+          try {
+            const sandboxInfo = await sandboxClient.create('nodejs-20')
+            sandboxId = sandboxInfo.id
+            projectSandboxes.set(projectId, sandboxId)
+          } catch (err) {
+            console.error('Failed to create sandbox:', err)
+          }
+        }
+      }
+
+      // Convert messages
       const formattedMessages: Message[] = messages.map((m, i) => ({
         id: `msg-${i}`,
-        role: m.role as 'user' | 'assistant' | 'system',
+        role: m.role as 'user' | 'assistant' | 'system' | 'tool',
         content: m.content,
-        timestamp: new Date()
+        timestamp: new Date(),
+        ...(m.toolCallId && { toolCallId: m.toolCallId })
       }))
 
-      // Stream response
-      for await (const chatEvent of aiService.chat(formattedMessages)) {
-        if (activeAbortController.signal.aborted) break
-        win.webContents.send('ai:chat:event', chatEvent)
+      // Agent loop - handle tool calls
+      let currentMessages = [...formattedMessages]
+      let iterations = 0
+      const maxIterations = 20 // Prevent infinite loops
+
+      while (iterations < maxIterations) {
+        iterations++
+        let hasToolCalls = false
+        const toolCalls: Array<{ id: string; name: string; input: unknown }> = []
+
+        // Stream AI response
+        for await (const chatEvent of aiService.chat(currentMessages)) {
+          win.webContents.send('ai:chat:event', chatEvent)
+
+          if (chatEvent.type === 'tool_use') {
+            hasToolCalls = true
+            toolCalls.push({
+              id: chatEvent.toolCallId || `tool-${Date.now()}`,
+              name: chatEvent.toolName || '',
+              input: chatEvent.toolInput || {}
+            })
+          }
+        }
+
+        // If no tool calls, we're done
+        if (!hasToolCalls) break
+
+        // Execute tool calls and collect results
+        for (const toolCall of toolCalls) {
+          if (!sandboxClient || !sandboxId) {
+            win.webContents.send('ai:chat:event', {
+              type: 'tool_result',
+              toolCallId: toolCall.id,
+              toolName: toolCall.name,
+              toolResult: { error: 'Sandbox not available. Please configure sandbox settings.' }
+            } as ChatEvent)
+            continue
+          }
+
+          try {
+            let result: unknown
+
+            switch (toolCall.name) {
+              case 'read_file':
+                result = await sandboxClient.readFile(sandboxId, (toolCall.input as { path: string }).path)
+                break
+
+              case 'write_file': {
+                const { path, content } = toolCall.input as { path: string; content: string }
+                await sandboxClient.writeFile(sandboxId, path, content)
+                result = { success: true, message: `File ${path} written successfully` }
+                break
+              }
+
+              case 'list_dir':
+                result = await sandboxClient.listDir(sandboxId, (toolCall.input as { path: string }).path)
+                break
+
+              case 'execute_command': {
+                const { command } = toolCall.input as { command: string }
+                const outputs: string[] = []
+                for await (const cmdEvent of sandboxClient.execute(sandboxId, command)) {
+                  if (cmdEvent.type === 'stdout') {
+                    outputs.push(cmdEvent.content || '')
+                    // Also send command output to renderer
+                    win.webContents.send('ai:chat:event', {
+                      type: 'content',
+                      content: `\n[cmd] ${cmdEvent.content}`
+                    } as ChatEvent)
+                  } else if (cmdEvent.type === 'stderr') {
+                    outputs.push(`[stderr] ${cmdEvent.content || ''}`)
+                  }
+                }
+                result = { output: outputs.join('\n') }
+                break
+              }
+
+              case 'mkdir':
+                await sandboxClient.mkdir(sandboxId, (toolCall.input as { path: string }).path)
+                result = { success: true }
+                break
+
+              case 'delete_file':
+                await sandboxClient.deleteFile(sandboxId, (toolCall.input as { path: string }).path)
+                result = { success: true }
+                break
+
+              default:
+                result = { error: `Unknown tool: ${toolCall.name}` }
+            }
+
+            win.webContents.send('ai:chat:event', {
+              type: 'tool_result',
+              toolCallId: toolCall.id,
+              toolName: toolCall.name,
+              toolResult: result
+            } as ChatEvent)
+
+            // Add tool result to messages for next iteration
+            currentMessages.push({
+              id: `tool-result-${toolCall.id}`,
+              role: 'tool',
+              content: JSON.stringify(result),
+              timestamp: new Date(),
+              toolCallId: toolCall.id
+            } as Message & { toolCallId: string })
+
+          } catch (err) {
+            const errorResult = { error: (err as Error).message }
+            win.webContents.send('ai:chat:event', {
+              type: 'tool_result',
+              toolCallId: toolCall.id,
+              toolName: toolCall.name,
+              toolResult: errorResult
+            } as ChatEvent)
+
+            currentMessages.push({
+              id: `tool-result-${toolCall.id}`,
+              role: 'tool',
+              content: JSON.stringify(errorResult),
+              timestamp: new Date(),
+              toolCallId: toolCall.id
+            } as Message & { toolCallId: string })
+          }
+        }
       }
+
     } catch (error) {
       win.webContents.send('ai:chat:error', (error as Error).message)
     }
@@ -76,10 +309,7 @@ export function registerIpcHandlers(): void {
 
   // Abort AI chat
   ipcMain.handle('ai:chat:abort', async (): Promise<void> => {
-    if (activeAbortController) {
-      activeAbortController.abort()
-      activeAbortController = null
-    }
+    // Signal abort if needed
   })
 
   // ============ Config Handlers ============

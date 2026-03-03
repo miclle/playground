@@ -19,6 +19,7 @@ export interface ChatEvent {
   toolName?: string
   toolInput?: unknown
   toolResult?: unknown
+  toolCallId?: string
   error?: string
 }
 
