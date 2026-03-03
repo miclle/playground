@@ -33,7 +33,7 @@ win:
     - target: nsis
       arch:
         - x64
-        - ia64
+        - arm64
 linux:
   target:
     - target: AppImage
