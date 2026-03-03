@@ -6,9 +6,9 @@ import { BottomPanel } from './components/BottomPanel'
 import { cn } from './lib/utils'
 
 function App() {
-  const [leftPanelWidth, setLeftPanelWidth] = useState(240)
-  const [rightPanelWidth, setRightPanelWidth] = useState(320)
-  const [bottomPanelHeight, setBottomPanelHeight] = useState(200)
+  const [leftPanelWidth] = useState(240)
+  const [rightPanelWidth] = useState(320)
+  const [bottomPanelHeight] = useState(200)
   const [bottomPanelVisible, setBottomPanelVisible] = useState(true)
 
   return (

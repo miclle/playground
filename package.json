@@ -1,6 +1,7 @@
 {
   "name": "playground",
   "version": "0.0.1",
+  "type": "module",
   "description": "AI Coding Desktop App - Vibe coding with AI in secure sandbox",
   "main": "./out/main/index.js",
   "author": "miclle",

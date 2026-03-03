@@ -1,4 +1,6 @@
-import { autoUpdater, UpdateInfo, CancellationToken } from 'electron-updater'
+import pkg from 'electron-updater'
+const { autoUpdater, CancellationToken } = pkg
+import type { UpdateInfo } from 'electron-updater'
 import { BrowserWindow, dialog } from 'electron'
 import { errorHandler } from '../error'
 

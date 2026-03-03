@@ -1,4 +1,4 @@
-import type { SandboxInfo, FileInfo, CommandResult } from '../../../shared/types'
+import type { SandboxInfo, FileInfo } from '../../../shared/types'
 
 // Sandbox client interface (e2b protocol compatible)
 export interface SandboxClient {

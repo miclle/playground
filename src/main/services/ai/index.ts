@@ -1,4 +1,4 @@
-import type { AIService, AIConfig, AIProvider } from './types'
+import type { AIService, AIConfig } from './types'
 import { OpenAIService } from './openai'
 import { ClaudeService } from './claude'
 

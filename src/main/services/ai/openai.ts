@@ -1,5 +1,5 @@
 import OpenAI from 'openai'
-import type { Message, ChatOptions, ChatEvent, ToolDefinition } from '../../../shared/types'
+import type { Message, ChatOptions, ChatEvent } from '../../../shared/types'
 import type { AIService, AIConfig } from './types'
 
 export class OpenAIService implements AIService {

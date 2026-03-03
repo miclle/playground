@@ -26,10 +26,10 @@ export function Preview({ url, htmlContent }: PreviewProps) {
   }
 
   const handleRefresh = () => {
-    if (iframeRef.current) {
+    if (iframeRef.current?.contentWindow) {
       setIsLoading(true)
       setError(null)
-      iframeRef.current.src = iframeRef.current.src
+      iframeRef.current.contentWindow.location.reload()
     }
   }
 
