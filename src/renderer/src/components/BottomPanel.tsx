@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { X, Terminal, Globe, Maximize2, Minimize2 } from 'lucide-react'
 import { cn } from '../lib/utils'
+import { Preview } from './Preview'
 
 type TabType = 'terminal' | 'preview'
 
@@ -57,11 +58,7 @@ export function BottomPanel({ onClose }: BottomPanelProps) {
 
       {/* Content */}
       <div className="flex-1 overflow-auto">
-        {activeTab === 'terminal' ? (
-          <TerminalContent />
-        ) : (
-          <PreviewContent />
-        )}
+        {activeTab === 'terminal' ? <TerminalContent /> : <Preview />}
       </div>
     </div>
   )
@@ -74,18 +71,6 @@ function TerminalContent() {
         <div>$ npm run dev</div>
         <div className="text-green-500">✓ Server started at http://localhost:3000</div>
         <div className="mt-2">Ready for AI commands...</div>
-      </div>
-    </div>
-  )
-}
-
-function PreviewContent() {
-  return (
-    <div className="h-full flex items-center justify-center text-muted-foreground">
-      <div className="text-center">
-        <Globe className="h-12 w-12 mx-auto mb-2 opacity-50" />
-        <p>Preview will appear here</p>
-        <p className="text-sm mt-1">Run your code to see the output</p>
       </div>
     </div>
   )

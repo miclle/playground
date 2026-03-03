@@ -1,6 +1,140 @@
-import { app, shell, BrowserWindow, ipcMain } from 'electron'
+import { app, shell, BrowserWindow, ipcMain, Menu, MenuItem } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
+
+function createMenu(mainWindow: BrowserWindow): void {
+  const isMac = process.platform === 'darwin'
+
+  const template: (MenuItem | MenuItemConstructorOptions)[] = [
+    // App menu (macOS only)
+    ...(isMac
+      ? [
+          {
+            label: app.name,
+            submenu: [
+              { role: 'about' as const },
+              { type: 'separator' as const },
+              { role: 'services' as const },
+              { type: 'separator' as const },
+              { role: 'hide' as const },
+              { role: 'hideOthers' as const },
+              { role: 'unhide' as const },
+              { type: 'separator' as const },
+              { role: 'quit' as const }
+            ]
+          }
+        ]
+      : []),
+    // File menu
+    {
+      label: 'File',
+      submenu: [
+        {
+          label: 'New Project',
+          accelerator: 'CmdOrCtrl+N',
+          click: () => mainWindow.webContents.send('menu:new-project')
+        },
+        {
+          label: 'Open Project',
+          accelerator: 'CmdOrCtrl+O',
+          click: () => mainWindow.webContents.send('menu:open-project')
+        },
+        { type: 'separator' },
+        {
+          label: 'Save',
+          accelerator: 'CmdOrCtrl+S',
+          click: () => mainWindow.webContents.send('menu:save')
+        },
+        { type: 'separator' },
+        isMac ? { role: 'close' as const } : { role: 'quit' as const }
+      ]
+    },
+    // Edit menu
+    {
+      label: 'Edit',
+      submenu: [
+        { role: 'undo' as const },
+        { role: 'redo' as const },
+        { type: 'separator' },
+        { role: 'cut' as const },
+        { role: 'copy' as const },
+        { role: 'paste' as const },
+        ...(isMac
+          ? [
+              { role: 'pasteAndMatchStyle' as const },
+              { role: 'delete' as const },
+              { role: 'selectAll' as const }
+            ]
+          : [
+              { role: 'delete' as const },
+              { type: 'separator' as const },
+              { role: 'selectAll' as const }
+            ])
+      ]
+    },
+    // View menu
+    {
+      label: 'View',
+      submenu: [
+        {
+          label: 'Toggle File Tree',
+          accelerator: 'CmdOrCtrl+1',
+          click: () => mainWindow.webContents.send('menu:toggle-file-tree')
+        },
+        {
+          label: 'Toggle Chat Panel',
+          accelerator: 'CmdOrCtrl+2',
+          click: () => mainWindow.webContents.send('menu:toggle-chat')
+        },
+        {
+          label: 'Toggle Bottom Panel',
+          accelerator: 'CmdOrCtrl+`',
+          click: () => mainWindow.webContents.send('menu:toggle-bottom-panel')
+        },
+        { type: 'separator' },
+        { role: 'reload' as const },
+        { role: 'forceReload' as const },
+        { type: 'separator' },
+        { role: 'resetZoom' as const },
+        { role: 'zoomIn' as const },
+        { role: 'zoomOut' as const },
+        { type: 'separator' },
+        { role: 'togglefullscreen' as const }
+      ]
+    },
+    // Window menu
+    {
+      label: 'Window',
+      submenu: [
+        { role: 'minimize' as const },
+        { role: 'zoom' as const },
+        ...(isMac
+          ? [
+              { type: 'separator' as const },
+              { role: 'front' as const },
+              { type: 'separator' as const },
+              { role: 'window' as const }
+            ]
+          : [{ role: 'close' as const }])
+      ]
+    },
+    // Help menu
+    {
+      role: 'help' as const,
+      submenu: [
+        {
+          label: 'Documentation',
+          click: async () => {
+            await shell.openExternal('https://github.com/miclle/playground')
+          }
+        }
+      ]
+    }
+  ]
+
+  const menu = Menu.buildFromTemplate(template)
+  Menu.setApplicationMenu(menu)
+}
 
 function createWindow(): void {
   const mainWindow = new BrowserWindow({
@@ -9,7 +143,7 @@ function createWindow(): void {
     minWidth: 900,
     minHeight: 600,
     show: false,
-    autoHideMenuBar: true,
+    autoHideMenuBar: false,
     titleBarStyle: 'hiddenInset',
     trafficLightPosition: { x: 15, y: 10 },
     webPreferences: {
@@ -19,6 +153,9 @@ function createWindow(): void {
       nodeIntegration: false
     }
   })
+
+  // Create application menu
+  createMenu(mainWindow)
 
   mainWindow.on('ready-to-show', () => {
     mainWindow.show()

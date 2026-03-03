@@ -4,22 +4,22 @@
 
 ---
 
-## Phase 0: 项目初始化
+## Phase 0: 项目初始化 ✅
 
-- [ ] 初始化 Electron 项目结构（electron-vite）
-- [ ] 配置 TypeScript（main/preload/renderer 分离配置）
-- [ ] 配置 Tailwind CSS v4
-- [ ] 配置 ESLint + Prettier
-- [ ] 配置 package.json 脚本（dev / build / package）
-- [ ] 配置 electron-builder（多平台打包）
+- [x] 初始化 Electron 项目结构（electron-vite）
+- [x] 配置 TypeScript（main/preload/renderer 分离配置）
+- [x] 配置 Tailwind CSS v4
+- [x] 配置 ESLint + Prettier
+- [x] 配置 package.json 脚本（dev / build / package）
+- [x] 配置 electron-builder（多平台打包）
 
 ## Phase 1: UI 基础框架
 
-- [ ] 搭建主窗口三栏布局框架
-- [ ] 集成 Monaco Editor（中间代码编辑区）
-- [ ] 实现文件树组件（左侧）
-- [ ] 实现 AI 对话面板组件（右侧）
-- [ ] 实现底部面板（终端输出 / 预览切换）
+- [x] 搭建主窗口三栏布局框架
+- [x] 集成 Monaco Editor（中间代码编辑区）
+- [x] 实现文件树组件（左侧）
+- [x] 实现 AI 对话面板组件（右侧）
+- [x] 实现底部面板（终端输出 / 预览切换）
 - [ ] 集成 WebView 预览组件
 - [ ] 实现窗口基础功能（标题栏、菜单、快捷键）
 
