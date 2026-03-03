@@ -10,7 +10,7 @@ export interface IpcApi {
 
   // AI operations
   ai: {
-    chat: (messages: { role: string; content: string }[]) => Promise<void>
+    chat: (messages: { role: string; content: string }[], projectId?: string) => Promise<void>
     abort: () => Promise<void>
     onEvent: (callback: (event: unknown) => void) => () => void
     onError: (callback: (error: string) => void) => () => void
@@ -59,7 +59,7 @@ const api: IpcApi = {
 
   // AI operations
   ai: {
-    chat: (messages) => ipcRenderer.invoke('ai:chat', messages),
+    chat: (messages, projectId) => ipcRenderer.invoke('ai:chat', messages, projectId),
     abort: () => ipcRenderer.invoke('ai:chat:abort'),
     onEvent: (callback) => {
       const handler = (_event: unknown, data: unknown) => callback(data)

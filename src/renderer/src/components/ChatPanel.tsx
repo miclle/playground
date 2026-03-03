@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { Send, Bot, User, Loader2, AlertCircle, Settings } from 'lucide-react'
+import { Send, Bot, User, Loader2, AlertCircle, Settings, Wrench, Terminal } from 'lucide-react'
 import { cn } from '../lib/utils'
 
 interface ChatMessage {
@@ -8,14 +8,24 @@ interface ChatMessage {
   content: string
   timestamp: Date
   isStreaming?: boolean
+  toolCalls?: ToolCall[]
+}
+
+interface ToolCall {
+  id: string
+  name: string
+  input: unknown
+  result?: unknown
+  status: 'pending' | 'running' | 'completed' | 'error'
 }
 
 interface ChatPanelProps {
   onOpenSettings: () => void
   hasProject: boolean
+  projectId?: string
 }
 
-export function ChatPanel({ onOpenSettings, hasProject }: ChatPanelProps) {
+export function ChatPanel({ onOpenSettings, hasProject, projectId }: ChatPanelProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
@@ -33,16 +43,49 @@ export function ChatPanel({ onOpenSettings, hasProject }: ChatPanelProps) {
   // Set up AI event listeners
   useEffect(() => {
     const unsubscribeEvent = window.api?.ai.onEvent((event: unknown) => {
-      const chatEvent = event as { type: string; content?: string }
+      const chatEvent = event as { type: string; content?: string; toolName?: string; toolInput?: unknown; toolCallId?: string; toolResult?: unknown }
+      console.log('[ChatPanel] Event:', chatEvent)
+
       if (chatEvent.type === 'content' && chatEvent.content) {
         setMessages((prev) => {
           const lastMessage = prev[prev.length - 1]
           if (lastMessage?.isStreaming) {
-            // Append to streaming message
             return [
               ...prev.slice(0, -1),
               { ...lastMessage, content: lastMessage.content + chatEvent.content }
             ]
+          }
+          return prev
+        })
+      } else if (chatEvent.type === 'tool_use') {
+        // Add tool call to the message
+        setMessages((prev) => {
+          const lastMessage = prev[prev.length - 1]
+          if (lastMessage?.isStreaming) {
+            const toolCall: ToolCall = {
+              id: chatEvent.toolCallId || `tool-${Date.now()}`,
+              name: chatEvent.toolName || '',
+              input: chatEvent.toolInput,
+              status: 'running'
+            }
+            return [
+              ...prev.slice(0, -1),
+              { ...lastMessage, toolCalls: [...(lastMessage.toolCalls || []), toolCall] }
+            ]
+          }
+          return prev
+        })
+      } else if (chatEvent.type === 'tool_result') {
+        // Update tool call with result
+        setMessages((prev) => {
+          const lastMessage = prev[prev.length - 1]
+          if (lastMessage?.toolCalls) {
+            const updatedToolCalls = lastMessage.toolCalls.map(tc =>
+              tc.name === chatEvent.toolName
+                ? { ...tc, result: chatEvent.toolResult, status: 'completed' as const }
+                : tc
+            )
+            return [...prev.slice(0, -1), { ...lastMessage, toolCalls: updatedToolCalls }]
           }
           return prev
         })
@@ -61,7 +104,6 @@ export function ChatPanel({ onOpenSettings, hasProject }: ChatPanelProps) {
     const unsubscribeError = window.api?.ai.onError((errorMsg: string) => {
       setError(errorMsg)
       setIsLoading(false)
-      // Remove streaming message if exists
       setMessages((prev) => {
         const lastMessage = prev[prev.length - 1]
         if (lastMessage?.isStreaming) {
@@ -92,29 +134,28 @@ export function ChatPanel({ onOpenSettings, hasProject }: ChatPanelProps) {
     setIsLoading(true)
     setError(null)
 
-    // Add placeholder for assistant response
     const assistantMessage: ChatMessage = {
       id: (Date.now() + 1).toString(),
       role: 'assistant',
       content: '',
       timestamp: new Date(),
-      isStreaming: true
+      isStreaming: true,
+      toolCalls: []
     }
     setMessages((prev) => [...prev, assistantMessage])
 
-    // Prepare messages for AI
     const messagesForAI = [...messages, userMessage].map((m) => ({
       role: m.role,
       content: m.content
     }))
 
     try {
-      await window.api?.ai.chat(messagesForAI)
+      await window.api?.ai.chat(messagesForAI, projectId)
     } catch (err) {
       setError((err as Error).message)
       setIsLoading(false)
     }
-  }, [input, isLoading, messages])
+  }, [input, isLoading, messages, projectId])
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -123,20 +164,61 @@ export function ChatPanel({ onOpenSettings, hasProject }: ChatPanelProps) {
     }
   }
 
-  // Empty state - no project
+  const renderToolCall = (toolCall: ToolCall) => {
+    const getToolIcon = () => {
+      switch (toolCall.name) {
+        case 'execute_command':
+          return <Terminal className="h-3 w-3" />
+        default:
+          return <Wrench className="h-3 w-3" />
+      }
+    }
+
+    const formatInput = (input: unknown): string => {
+      if (typeof input === 'object' && input !== null) {
+        return JSON.stringify(input, null, 2)
+      }
+      return String(input)
+    }
+
+    return (
+      <div key={toolCall.id} className="mt-2 rounded border border-border bg-muted/50 overflow-hidden">
+        <div className="flex items-center gap-2 px-2 py-1.5 bg-muted/80 text-xs">
+          {getToolIcon()}
+          <span className="font-mono">{toolCall.name}</span>
+          {toolCall.status === 'running' && (
+            <Loader2 className="h-3 w-3 animate-spin ml-auto" />
+          )}
+        </div>
+        <div className="px-2 py-1 text-xs font-mono text-muted-foreground border-t border-border">
+          <pre className="whitespace-pre-wrap overflow-auto max-h-24">{formatInput(toolCall.input)}</pre>
+        </div>
+        {toolCall.result && (
+          <div className="px-2 py-1 text-xs font-mono bg-green-500/10 text-green-600 dark:text-green-400 border-t border-border">
+            <pre className="whitespace-pre-wrap overflow-auto max-h-32">
+              {typeof toolCall.result === 'object'
+                ? JSON.stringify(toolCall.result, null, 2)
+                : String(toolCall.result)}
+            </pre>
+          </div>
+        )}
+      </div>
+    )
+  }
+
   if (!hasProject) {
     return (
       <div className="flex flex-col h-full">
         <div className="px-3 py-2 border-b border-border">
           <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-            AI Chat
+            AI Agent
           </span>
         </div>
         <div className="flex-1 flex items-center justify-center p-4">
           <div className="text-center text-muted-foreground">
             <Bot className="h-12 w-12 mx-auto mb-3 opacity-50" />
             <p>No project selected</p>
-            <p className="text-sm mt-1">Create or select a project to start chatting</p>
+            <p className="text-sm mt-1">Create or select a project to start</p>
           </div>
         </div>
       </div>
@@ -148,7 +230,7 @@ export function ChatPanel({ onOpenSettings, hasProject }: ChatPanelProps) {
       {/* Header */}
       <div className="px-3 py-2 border-b border-border">
         <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-          AI Chat
+          AI Agent
         </span>
       </div>
 
@@ -157,8 +239,14 @@ export function ChatPanel({ onOpenSettings, hasProject }: ChatPanelProps) {
         {messages.length === 0 && (
           <div className="text-center text-muted-foreground py-8">
             <Bot className="h-10 w-10 mx-auto mb-3 opacity-50" />
-            <p className="text-sm">Start a conversation with AI</p>
-            <p className="text-xs mt-1">Ask me to help you write code</p>
+            <p className="text-sm font-medium">AI Coding Agent</p>
+            <p className="text-xs mt-1">Ask me to create files, run code, or build apps</p>
+            <div className="mt-4 space-y-1 text-xs">
+              <p className="text-muted-foreground">Examples:</p>
+              <p>"Create a React counter component"</p>
+              <p>"Build a simple Express server"</p>
+              <p>"Write a Python script to parse JSON"</p>
+            </div>
           </div>
         )}
         {messages.map((message) => (
@@ -183,32 +271,29 @@ export function ChatPanel({ onOpenSettings, hasProject }: ChatPanelProps) {
                 <User className="h-4 w-4" />
               )}
             </div>
-            <div
-              className={cn(
-                'flex-1 rounded-lg px-3 py-2 text-sm whitespace-pre-wrap',
-                message.role === 'assistant'
-                  ? 'bg-muted'
-                  : 'bg-primary text-primary-foreground'
-              )}
-            >
-              {message.content || (message.isStreaming ? '...' : '')}
-              {message.isStreaming && (
-                <span className="inline-block w-2 h-4 bg-foreground/50 animate-pulse ml-0.5" />
+            <div className="flex-1 min-w-0">
+              <div
+                className={cn(
+                  'rounded-lg px-3 py-2 text-sm whitespace-pre-wrap',
+                  message.role === 'assistant'
+                    ? 'bg-muted'
+                    : 'bg-primary text-primary-foreground'
+                )}
+              >
+                {message.content || (message.isStreaming ? '...' : '')}
+                {message.isStreaming && !message.content && (
+                  <span className="inline-block w-2 h-4 bg-foreground/50 animate-pulse ml-0.5" />
+                )}
+              </div>
+              {/* Tool calls */}
+              {message.toolCalls && message.toolCalls.length > 0 && (
+                <div className="mt-2 space-y-2">
+                  {message.toolCalls.map(renderToolCall)}
+                </div>
               )}
             </div>
           </div>
         ))}
-        {isLoading && messages[messages.length - 1]?.content === '' && (
-          <div className="flex gap-3">
-            <div className="flex-shrink-0 w-7 h-7 rounded-full bg-primary flex items-center justify-center">
-              <Bot className="h-4 w-4 text-primary-foreground" />
-            </div>
-            <div className="flex items-center gap-2 text-muted-foreground">
-              <Loader2 className="h-4 w-4 animate-spin" />
-              <span className="text-sm">Thinking...</span>
-            </div>
-          </div>
-        )}
         <div ref={messagesEndRef} />
       </div>
 
@@ -233,7 +318,7 @@ export function ChatPanel({ onOpenSettings, hasProject }: ChatPanelProps) {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Ask AI to help you code..."
+            placeholder="Ask AI to create files or run code..."
             className="flex-1 resize-none rounded-md border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             rows={2}
             disabled={isLoading}

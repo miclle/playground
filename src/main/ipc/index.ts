@@ -176,7 +176,7 @@ export function registerIpcHandlers(): void {
       }))
 
       // Agent loop - handle tool calls
-      let currentMessages = [...formattedMessages]
+      const currentMessages = [...formattedMessages]
       let iterations = 0
       const maxIterations = 20 // Prevent infinite loops
 
