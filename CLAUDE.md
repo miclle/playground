@@ -184,7 +184,9 @@ npm run test:coverage # Run tests with coverage
 
 ## Testing Requirements
 
-**IMPORTANT**: All code changes must include appropriate tests, and all tests must pass before committing.
+**IMPORTANT**:
+1. All code changes must include appropriate tests, and all tests must pass before committing.
+2. After completing any feature development or code changes, you MUST proactively run tests to verify the changes work correctly.
 
 ### Test Framework
 - **Vitest** is used as the test framework
