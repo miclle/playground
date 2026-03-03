@@ -77,14 +77,14 @@
 - [x] 实现多 Profile 管理和切换
 - [ ] 实现代理配置
 
-## Phase 8: 完善与发布
+## Phase 8: 完善与发布 ✅
 
-- [ ] 实现应用自动更新机制
-- [ ] 添加错误处理和用户提示
-- [ ] 性能优化（大文件、长会话）
-- [ ] macOS 打包和签名
-- [ ] Windows / Linux 打包
-- [ ] 编写用户文档
+- [x] 实现应用自动更新机制（electron-updater）
+- [x] 添加错误处理和用户提示
+- [x] 性能优化（大文件、长会话）
+- [x] macOS 打包配置（electron-builder）
+- [x] Windows / Linux 打包配置
+- [x] 编写用户文档（README.md）
 
 ---
 

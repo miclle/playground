@@ -3,6 +3,9 @@ import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { initDatabase, closeDatabase } from './database'
 import { registerIpcHandlers } from './ipc'
+import { updaterService } from './services/updater'
+
+let mainWindow: BrowserWindow | null = null
 
 function createMenu(mainWindow: BrowserWindow): void {
   const isMac = process.platform === 'darwin'
@@ -129,6 +132,13 @@ function createMenu(mainWindow: BrowserWindow): void {
           click: async () => {
             await shell.openExternal('https://github.com/miclle/playground')
           }
+        },
+        { type: 'separator' },
+        {
+          label: 'Check for Updates...',
+          click: async () => {
+            await updaterService.checkForUpdates()
+          }
         }
       ]
     }
@@ -139,7 +149,7 @@ function createMenu(mainWindow: BrowserWindow): void {
 }
 
 function createWindow(): void {
-  const mainWindow = new BrowserWindow({
+  mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
     minWidth: 900,
@@ -159,8 +169,13 @@ function createWindow(): void {
   // Create application menu
   createMenu(mainWindow)
 
+  // Initialize auto-updater
+  if (!is.dev) {
+    updaterService.initialize(mainWindow)
+  }
+
   mainWindow.on('ready-to-show', () => {
-    mainWindow.show()
+    mainWindow?.show()
   })
 
   mainWindow.webContents.setWindowOpenHandler((details) => {
