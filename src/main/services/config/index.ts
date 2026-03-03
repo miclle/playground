@@ -15,6 +15,16 @@ const CONFIG_KEYS = {
 
 // Secure key storage using system keychain
 export async function storeApiKey(service: string, key: string): Promise<void> {
+  // keytar requires non-empty password
+  if (!key || key.trim() === '') {
+    // If key is empty, delete any existing key
+    try {
+      await keytar.deletePassword(SERVICE_NAME, service)
+    } catch {
+      // Ignore error if password doesn't exist
+    }
+    return
+  }
   await keytar.setPassword(SERVICE_NAME, service, key)
 }
 
