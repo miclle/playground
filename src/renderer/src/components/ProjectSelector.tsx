@@ -5,8 +5,8 @@ import { cn } from '../lib/utils'
 interface Project {
   id: string
   name: string
-  created_at: string
-  updated_at: string
+  createdAt: string
+  updatedAt: string
 }
 
 interface ProjectSelectorProps {
@@ -24,33 +24,46 @@ export function ProjectSelector({ onClose, onSelectProject }: ProjectSelectorPro
   }, [])
 
   const loadProjects = async () => {
-    const result = await window.electronAPI?.project.list()
-    if (result) {
-      setProjects(result as Project[])
+    try {
+      const result = await window.api?.project.list()
+      if (result) {
+        setProjects(result as Project[])
+      }
+    } catch (error) {
+      console.error('Failed to load projects:', error)
     }
   }
 
   const handleCreateProject = async () => {
     if (!newProjectName.trim()) return
 
-    const project = await window.electronAPI?.project.create({
-      name: newProjectName.trim(),
-      description: ''
-    })
+    try {
+      const project = await window.api?.project.create({
+        name: newProjectName.trim(),
+        description: ''
+      })
 
-    if (project) {
-      setProjects([project as Project, ...projects])
-      setShowNewProject(false)
-      setNewProjectName('')
-      onSelectProject(project as Project)
+      if (project) {
+        setProjects([project as Project, ...projects])
+        setShowNewProject(false)
+        setNewProjectName('')
+        onSelectProject(project as Project)
+      }
+    } catch (error) {
+      console.error('Failed to create project:', error)
+      alert('Failed to create project: ' + (error as Error).message)
     }
   }
 
   const handleDeleteProject = async (e: React.MouseEvent, projectId: string) => {
     e.stopPropagation()
     if (confirm('Are you sure you want to delete this project?')) {
-      await window.electronAPI?.project.delete(projectId)
-      setProjects(projects.filter((p) => p.id !== projectId))
+      try {
+        await window.api?.project.delete(projectId)
+        setProjects(projects.filter((p) => p.id !== projectId))
+      } catch (error) {
+        console.error('Failed to delete project:', error)
+      }
     }
   }
 
@@ -143,7 +156,7 @@ export function ProjectSelector({ onClose, onSelectProject }: ProjectSelectorPro
                       <div className="text-sm font-medium">{project.name}</div>
                       <div className="flex items-center gap-1 text-xs text-muted-foreground">
                         <Clock className="h-3 w-3" />
-                        {formatDate(project.updated_at)}
+                        {formatDate(project.updatedAt)}
                       </div>
                     </div>
                   </div>
