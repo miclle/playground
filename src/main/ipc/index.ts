@@ -1,14 +1,20 @@
-import { ipcMain } from 'electron'
+import { ipcMain, shell } from 'electron'
 import * as db from '../database'
 import * as config from '../services/config'
 import type { Project, Session, Message } from '../../shared/types'
 
 // Register all IPC handlers
 export function registerIpcHandlers(): void {
+  // ============ Shell Handlers ============
+
+  ipcMain.handle('shell:openExternal', async (_event, url: string): Promise<void> => {
+    await shell.openExternal(url)
+  })
+
   // ============ Project Handlers ============
 
-  ipcMain.handle('project:create', async (_event, name: string, description?: string): Promise<Project> => {
-    return db.createProject(name, description)
+  ipcMain.handle('project:create', async (_event, data: { name: string; description?: string }): Promise<Project> => {
+    return db.createProject(data.name, data.description)
   })
 
   ipcMain.handle('project:get', async (_event, id: string): Promise<Project | null> => {

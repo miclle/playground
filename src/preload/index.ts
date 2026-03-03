@@ -6,9 +6,14 @@ export interface IpcApi {
   // Menu events
   onMenuEvent: (callback: (event: string) => void) => () => void
 
+  // Shell operations
+  shell: {
+    openExternal: (url: string) => Promise<void>
+  }
+
   // Project operations
   project: {
-    create: (name: string, description?: string) => Promise<import('../shared/types').Project>
+    create: (data: { name: string; description?: string }) => Promise<import('../shared/types').Project>
     get: (id: string) => Promise<import('../shared/types').Project | null>
     list: () => Promise<import('../shared/types').Project[]>
     update: (id: string, data: { name?: string; description?: string; sandboxId?: string }) => Promise<import('../shared/types').Project | null>
@@ -48,6 +53,11 @@ export interface IpcApi {
 
 // Custom APIs for renderer
 const api: IpcApi = {
+  // Shell operations
+  shell: {
+    openExternal: (url) => ipcRenderer.invoke('shell:openExternal', url)
+  },
+
   // Menu event listeners
   onMenuEvent: (callback) => {
     ipcRenderer.on('menu:new-project', () => callback('new-project'))
@@ -68,7 +78,7 @@ const api: IpcApi = {
 
   // Project operations
   project: {
-    create: (name, description) => ipcRenderer.invoke('project:create', name, description),
+    create: (data: { name: string; description?: string }) => ipcRenderer.invoke('project:create', data),
     get: (id) => ipcRenderer.invoke('project:get', id),
     list: () => ipcRenderer.invoke('project:list'),
     update: (id, data) => ipcRenderer.invoke('project:update', id, data),
