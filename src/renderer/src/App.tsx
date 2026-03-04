@@ -309,7 +309,7 @@ function App() {
       <div className="flex flex-1 overflow-hidden">
         {/* Left panel - File Tree */}
         <div
-          className="flex-shrink-0 bg-[#1a1a1a] overflow-hidden border-r border-border/40"
+          className="flex-shrink-0 bg-muted/20 overflow-hidden border-r border-border/60"
           style={{ width: leftPanelWidth }}
         >
           <FileTree
@@ -327,17 +327,19 @@ function App() {
 
         {/* Center panel - Editor + Terminal */}
         {terminalVisible ? (
-          <CenterPanel
-            terminalHeight={terminalHeight}
-            onTerminalHeightChange={handleTerminalHeightChange}
-            onToggleTerminalMaximize={() => setIsTerminalMaximized(!isTerminalMaximized)}
-            isTerminalMaximized={isTerminalMaximized}
-            onCloseTerminal={() => setTerminalVisible(false)}
-            filePath={selectedFile}
-            projectId={currentProject?.id}
-          />
+          <div className="flex-1 flex flex-col overflow-hidden border-r border-border/60">
+            <CenterPanel
+              terminalHeight={terminalHeight}
+              onTerminalHeightChange={handleTerminalHeightChange}
+              onToggleTerminalMaximize={() => setIsTerminalMaximized(!isTerminalMaximized)}
+              isTerminalMaximized={isTerminalMaximized}
+              onCloseTerminal={() => setTerminalVisible(false)}
+              filePath={selectedFile}
+              projectId={currentProject?.id}
+            />
+          </div>
         ) : (
-          <div className="flex-1 flex flex-col overflow-hidden border-r border-border/40 bg-[#0d0d0d]">
+          <div className="flex-1 flex flex-col overflow-hidden border-r border-border/60 bg-background">
             {/* Tab bar for code/preview */}
             <div className="flex items-center border-b border-border bg-muted/30">
               <button className="flex items-center gap-1.5 px-4 py-2 text-sm border-b-2 border-primary text-foreground">
@@ -359,7 +361,7 @@ function App() {
           <>
             <ResizeHandle direction="horizontal" onResize={handleRightResize} />
             <div
-              className="flex-shrink-0 bg-[#1a1a1a] overflow-hidden"
+              className="flex-shrink-0 bg-muted/20 overflow-hidden"
               style={{ width: rightPanelWidth }}
             >
               <ChatPanel

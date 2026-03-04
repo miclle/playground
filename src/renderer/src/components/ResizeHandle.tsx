@@ -9,19 +9,10 @@ interface ResizeHandleProps {
 
 export function ResizeHandle({ direction, onResize, className }: ResizeHandleProps) {
   const [isDragging, setIsDragging] = useState(false)
-  const [isHovering, setIsHovering] = useState(false)
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault()
     setIsDragging(true)
-  }, [])
-
-  const handleMouseEnter = useCallback(() => {
-    setIsHovering(true)
-  }, [])
-
-  const handleMouseLeave = useCallback(() => {
-    setIsHovering(false)
   }, [])
 
   useEffect(() => {
@@ -37,7 +28,6 @@ export function ResizeHandle({ direction, onResize, className }: ResizeHandlePro
 
     const handleMouseUp = () => {
       setIsDragging(false)
-      setIsHovering(false)
     }
 
     document.addEventListener('mousemove', handleMouseMove)
@@ -52,27 +42,35 @@ export function ResizeHandle({ direction, onResize, className }: ResizeHandlePro
   return (
     <div
       className={cn(
-        'flex-shrink-0 transition-all duration-200 relative z-10',
-        direction === 'horizontal'
-          ? 'w-4 cursor-col-resize'
-          : 'h-4 cursor-row-resize',
-        (isHovering || isDragging) && 'bg-primary/5',
-        isDragging && 'bg-primary/10',
+        // Container takes no space
+        'relative shrink-0',
+        direction === 'horizontal' ? 'w-0' : 'h-0',
+        // Cursor
+        direction === 'horizontal' ? 'cursor-col-resize' : 'cursor-row-resize',
         className
       )}
       onMouseDown={handleMouseDown}
-      onMouseEnter={handleMouseEnter}
-      onMouseLeave={handleMouseLeave}
     >
-      {/* Visible separator line - always visible */}
+      {/* Visible separator line - using ::before pseudo-element approach */}
       <div
         className={cn(
-          'absolute bg-border transition-all duration-200',
+          'absolute bg-border transition-all',
+          // Horizontal: vertical line on the left edge
           direction === 'horizontal'
-            ? 'left-1/2 top-0 bottom-0 w-[2px] -translate-x-1/2'
-            : 'top-1/2 left-0 right-0 h-[2px] -translate-y-1/2',
-          // Make it more visible on hover/drag
-          (isHovering || isDragging) && 'bg-primary/60 shadow-[0_0_4px_rgba(0,0,0,0.2)]'
+            ? 'inset-y-0 -left-px w-px hover:w-0.5 hover:-left-0.5 hover:bg-muted-foreground'
+            : 'inset-x-0 -top-px h-px hover:h-0.5 hover:-top-0.5 hover:bg-muted-foreground',
+          // Wider and darker when dragging
+          isDragging && (direction === 'horizontal' ? 'w-0.5 -left-0.5 bg-primary' : 'h-0.5 -top-0.5 bg-primary')
+        )}
+      />
+      {/* Invisible drag handle area - larger click area */}
+      <div
+        className={cn(
+          'absolute bg-transparent',
+          // Horizontal: extends left to capture drags
+          direction === 'horizontal'
+            ? 'inset-y-0 -left-1 w-2'
+            : 'inset-x-0 -top-1 h-2'
         )}
       />
     </div>
