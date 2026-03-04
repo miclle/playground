@@ -2,11 +2,41 @@
 
 基于需求文档 `docs/requirement.md` 整理的开发任务清单。
 
-**状态**: ✅ 基本完成
+**状态**: ✅ 已完成
 
 ---
 
 ## 最新更新 (2026-03-04)
+
+### 🎉 AI 代码生成和预览完整流程 ✅
+- ✅ AI 对话生成代码文件到沙箱
+- ✅ 文件显示在左侧文件树
+- ✅ 点击文件在 Code 编辑器中打开
+- ✅ Preview 标签预览 HTML 渲染效果
+
+**核心功能**:
+```typescript
+// 1. AI 生成代码 → 沙箱写入
+await sandbox.writeFile(path, content)
+
+// 2. 文件树刷新显示
+loadProjectFiles(projectId)
+
+// 3. 编辑器加载文件
+await sandbox.readFile(path)
+
+// 4. Preview 实时预览
+<Preview filePath={filePath} projectId={projectId} />
+```
+
+**技术改进**:
+- 沙箱操作添加自动超时恢复机制 (`ensureSandboxAlive`)
+- 修复 Editor 类型检查错误 (`typeof result === 'object'`)
+- 文件列表从根目录改为 `/home/user`
+- 目录过滤更宽松，优先显示用户创建的文件
+- Preview 组件支持从沙箱读取并渲染文件
+
+### AI 工具调用 JSON 解析增强 ✅
 
 ### AI 工具调用 JSON 解析增强 ✅
 - ✅ 增加 max_tokens 从 8192 到 16384
@@ -185,8 +215,9 @@ npx ts-node --esm src/main/services/sandbox/test.ts
 | 总阶段数 | 9 |
 | 总任务数 | 51 |
 | 完成率 | 100% |
-| 代码行数 | ~5000+ |
-| 提交次数 | 12 |
+| 代码行数 | ~8000+ |
+| 提交次数 | 20+ |
+| 里程碑 | AI→代码→预览完整流程 ✅ |
 
 ## 文档索引
 
