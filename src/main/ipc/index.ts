@@ -335,14 +335,23 @@ export function registerIpcHandlers(): void {
                   console.error('[IPC] write_file failed: missing parameters')
                 } else {
                   try {
-                    console.log('[IPC] Writing file to sandbox:', sandboxId, 'path:', input.path, 'content length:', input.content.length)
-                    await sandboxClient.writeFile(sandboxId, input.path, input.content)
-                    result = { success: true, message: `File ${input.path} written successfully` }
-                    console.log('[IPC] File written successfully:', input.path, 'to sandbox:', sandboxId)
+                    // Normalize path - if not absolute or doesn't start with /home/user, prepend it
+                    let writePath = input.path
+                    if (!writePath.startsWith('/home/user/') && !writePath.startsWith('/')) {
+                      writePath = `/home/user/${writePath}`
+                    } else if (!writePath.startsWith('/home/user/') && writePath.startsWith('/')) {
+                      // Absolute path but not in /home/user, redirect to /home/user
+                      const filename = writePath.split('/').pop() || writePath
+                      writePath = `/home/user/${filename}`
+                    }
+                    console.log('[IPC] Writing file to sandbox:', sandboxId, 'path:', writePath, 'content length:', input.content.length)
+                    await sandboxClient.writeFile(sandboxId, writePath, input.content)
+                    result = { success: true, message: `File ${writePath} written successfully` }
+                    console.log('[IPC] File written successfully:', writePath, 'to sandbox:', sandboxId)
 
                     // Notify renderer to refresh file list
                     console.log('[IPC] Sending sandbox:files:changed event')
-                    win.webContents.send('sandbox:files:changed', { sandboxId, path: input.path })
+                    win.webContents.send('sandbox:files:changed', { sandboxId, path: writePath })
                   } catch (writeErr) {
                     result = { error: `Failed to write file: ${(writeErr as Error).message}` }
                     console.error('[IPC] write_file error:', writeErr)

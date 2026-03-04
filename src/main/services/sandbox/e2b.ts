@@ -60,7 +60,12 @@ export class E2BSandboxClient implements SandboxClient {
     if (!cached) {
       console.log('[E2B] Sandbox not in cache, creating new one with template:', this.defaultTemplate)
       const info = await this.create(this.defaultTemplate)
-      return this.sandboxCache.get(info.id)!.sandbox
+      const newSandbox = this.sandboxCache.get(info.id)!.sandbox
+      // Also cache with the requested ID so we can find it next time
+      if (info.id !== sandboxId) {
+        this.sandboxCache.set(sandboxId, { sandbox: newSandbox, createdAt: Date.now() })
+      }
+      return newSandbox
     }
 
     // Try to access the sandbox to check if it's alive
@@ -74,7 +79,10 @@ export class E2BSandboxClient implements SandboxClient {
         this._connected.delete(sandboxId)
         this.sandboxCache.delete(sandboxId)
         const info = await this.create(this.defaultTemplate)
-        return this.sandboxCache.get(info.id)!.sandbox
+        const newSandbox = this.sandboxCache.get(info.id)!.sandbox
+        // Cache with the old ID so subsequent calls find it
+        this.sandboxCache.set(sandboxId, { sandbox: newSandbox, createdAt: Date.now() })
+        return newSandbox
       }
       throw err
     }
