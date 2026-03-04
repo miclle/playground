@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react'
 import { Terminal } from 'xterm'
 import { FitAddon } from 'xterm-addon-fit'
 import { WebLinksAddon } from 'xterm-addon-web-links'
+import { Unicode11Addon } from 'xterm-addon-unicode11'
 import 'xterm/css/xterm.css'
 import './Terminal.css'
 
@@ -22,7 +23,15 @@ export function TerminalPanel({ projectId }: TerminalPanelProps) {
     if (!terminalRef.current) return
 
     const terminal = new Terminal({
+      allowProposedApi: true,
       allowTransparency: true,
+      convertEol: true, // Convert \n to \r\n for proper line breaks
+      fontFamily: "'SF Mono', 'Monaco', 'Menlo', 'Courier New', monospace",
+      fontSize: 13,
+      fontWeight: 'normal',
+      fontWeightBold: 'bold',
+      letterSpacing: 0,
+      lineHeight: 1.2,
       theme: {
         background: '#1a1a1a',
         foreground: '#e0e0e0',
@@ -46,7 +55,6 @@ export function TerminalPanel({ projectId }: TerminalPanelProps) {
         brightCyan: '#29b8db',
         brightWhite: '#ffffff',
       },
-      fontSize: 13,
       cursorBlink: true,
       cursorStyle: 'block',
       scrollback: 1000,
@@ -56,6 +64,11 @@ export function TerminalPanel({ projectId }: TerminalPanelProps) {
     const fitAddon = new FitAddon()
     terminal.loadAddon(fitAddon)
     terminal.loadAddon(new WebLinksAddon())
+
+    // Load Unicode11 addon for proper character width handling (CJK, emoji, etc.)
+    const unicode11Addon = new Unicode11Addon()
+    terminal.loadAddon(unicode11Addon)
+    terminal.unicode.activeVersion = '11'
 
     terminal.open(terminalRef.current)
 
@@ -100,9 +113,10 @@ export function TerminalPanel({ projectId }: TerminalPanelProps) {
       terminal.writeln('')
       terminal.write(`\x1b[1;36m${cmd}\x1b[0m\r\n`)
 
-      // 设置 COLUMNS 环境变量以获得更好的输出格式
-      // 使用 shell 来设置环境变量
-      const cmdWithCols = `export COLUMNS=200; ${cmd}`
+      // 使用终端实际列数设置 COLUMNS 环境变量
+      // 注意：E2B sandbox 没有 PTY，所以 stty 不工作，只能依赖环境变量
+      const cols = terminal.cols || 80
+      const cmdWithCols = `COLUMNS=${cols} ${cmd}`
 
       try {
         // 监听流式输出
