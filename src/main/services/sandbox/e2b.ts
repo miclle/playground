@@ -1,4 +1,4 @@
-import { Sandbox as E2BSandbox } from 'e2b'
+import { Sandbox as E2BSandbox, type CommandResult } from 'e2b'
 import type { SandboxInfo, FileInfo } from '../../../shared/types'
 import type { SandboxClient, SandboxConfig, CommandEvent } from './types'
 
@@ -308,18 +308,23 @@ export class E2BSandboxClient implements SandboxClient {
   async *execute(sandboxId: string, command: string): AsyncGenerator<CommandEvent> {
     try {
       const sandbox = await this.ensureSandboxAlive(sandboxId)
-      const process = await sandbox.process.start(command)
 
-      for await (const output of process.stdout) {
-        yield { type: 'stdout', content: output }
+      // Run command and get result
+      const result = await sandbox.commands.run(command)
+
+      // Yield stdout
+      if (result.stdout) {
+        yield { type: 'stdout', content: result.stdout }
       }
 
-      for await (const output of process.stderr) {
-        yield { type: 'stderr', content: output }
+      // Yield stderr
+      if (result.stderr) {
+        yield { type: 'stderr', content: result.stderr }
       }
 
-      const exitCode = await process.wait()
-      yield { type: 'exit', exitCode }
+      // Yield exit code
+      yield { type: 'exit', exitCode: result.exitCode }
+
     } catch (err) {
       // If it's a timeout error, try once more with a fresh sandbox
       if (this.isTimeoutError(err)) {
@@ -327,18 +332,11 @@ export class E2BSandboxClient implements SandboxClient {
         this._connected.delete(sandboxId)
         this.sandboxCache.delete(sandboxId)
         const sandbox = await this.ensureSandboxAlive(sandboxId)
-        const process = await sandbox.process.start(command)
+        const result = await sandbox.commands.run(command)
 
-        for await (const output of process.stdout) {
-          yield { type: 'stdout', content: output }
-        }
-
-        for await (const output of process.stderr) {
-          yield { type: 'stderr', content: output }
-        }
-
-        const exitCode = await process.wait()
-        yield { type: 'exit', exitCode }
+        yield { type: 'stdout', content: result.stdout }
+        yield { type: 'stderr', content: result.stderr }
+        yield { type: 'exit', exitCode: result.exitCode }
       } else {
         yield { type: 'error', error: (err as Error).message }
       }
