@@ -161,3 +161,7 @@ dist/
 test-*.mjs
 test-*.cjs
 test-*.ts
+
+# Claude Code local settings
+.claude/settings.local.json
+.claude/projects/
