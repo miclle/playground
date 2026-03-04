@@ -1,17 +1,7 @@
 import { useRef, useEffect, useState } from 'react'
 import Editor from '@monaco-editor/react'
 import type { editor } from 'monaco-editor'
-import { Loader2 } from 'lucide-react'
-
-const defaultCode = `// Welcome to Playground
-// Start coding or ask AI to help you
-
-function hello() {
-  console.log('Hello, World!')
-}
-
-hello()
-`
+import { Loader2, FileCode } from 'lucide-react'
 
 interface EditorPanelProps {
   filePath?: string
@@ -20,7 +10,7 @@ interface EditorPanelProps {
 
 export function EditorPanel({ filePath, projectId }: EditorPanelProps) {
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null)
-  const [content, setContent] = useState(defaultCode)
+  const [content, setContent] = useState('')
   const [loading, setLoading] = useState(false)
   const [language, setLanguage] = useState('typescript')
 
@@ -28,7 +18,8 @@ export function EditorPanel({ filePath, projectId }: EditorPanelProps) {
   useEffect(() => {
     const loadFile = async () => {
       if (!filePath || !projectId) {
-        setContent(defaultCode)
+        setContent('')
+        setLanguage('plaintext')
         return
       }
 
@@ -84,6 +75,17 @@ export function EditorPanel({ filePath, projectId }: EditorPanelProps) {
     return (
       <div className="h-full w-full flex items-center justify-center">
         <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
+    )
+  }
+
+  // Empty state when no file is selected
+  if (!filePath) {
+    return (
+      <div className="h-full w-full flex flex-col items-center justify-center text-muted-foreground">
+        <FileCode className="h-16 w-16 mb-4 opacity-20" />
+        <p className="text-lg font-medium">No file selected</p>
+        <p className="text-sm mt-2">Select a file from the file tree or ask AI to create one</p>
       </div>
     )
   }

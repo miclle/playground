@@ -2,6 +2,7 @@ import { useState, useCallback } from 'react'
 import { Code, Globe, Terminal, Maximize2, Minimize2, X } from 'lucide-react'
 import { EditorPanel } from './Editor'
 import { Preview } from './Preview'
+import { TerminalPanel } from './Terminal'
 import { ResizeHandle } from './ResizeHandle'
 import { cn } from '../lib/utils'
 
@@ -112,12 +113,8 @@ export function CenterPanel({
         </div>
 
         {/* Terminal content */}
-        <div className="flex-1 overflow-auto p-4 font-mono text-sm">
-          <div className="text-muted-foreground">
-            <div>$ npm run dev</div>
-            <div className="text-green-500">✓ Server started at http://localhost:3000</div>
-            <div className="mt-2">Ready for AI commands...</div>
-          </div>
+        <div className="flex-1 overflow-hidden">
+          <TerminalPanel projectId={projectId} />
         </div>
       </div>
     </div>

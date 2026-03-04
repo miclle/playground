@@ -62,7 +62,9 @@ export interface IpcApi {
     getOrCreate: (projectId: string) => Promise<{ sandboxId: string } | { error: string }>
     listDir: (projectId: string, path: string) => Promise<import('../shared/types').FileInfo[] | { error: string }>
     readFile: (projectId: string, path: string) => Promise<string | { error: string }>
+    execute: (projectId: string, command: string) => Promise<string | { error: string }>
     onFilesChanged: (callback: (data: { sandboxId: string; path: string }) => void) => () => void
+    onTerminalOutput: (callback: (data: { content: string; type: 'stdout' | 'stderr' | 'error' }) => void) => () => void
   }
 
   // Storage operations
@@ -153,10 +155,16 @@ const api: IpcApi = {
     getOrCreate: (projectId) => ipcRenderer.invoke('sandbox:getOrCreate', projectId),
     listDir: (projectId, path) => ipcRenderer.invoke('sandbox:listDir', projectId, path),
     readFile: (projectId, path) => ipcRenderer.invoke('sandbox:readFile', projectId, path),
+    execute: (projectId, command) => ipcRenderer.invoke('sandbox:execute', projectId, command),
     onFilesChanged: (callback) => {
       const handler = (_event, data) => callback(data)
       ipcRenderer.on('sandbox:files:changed', handler)
       return () => ipcRenderer.removeListener('sandbox:files:changed', handler)
+    },
+    onTerminalOutput: (callback) => {
+      const handler = (_event, data) => callback(data)
+      ipcRenderer.on('sandbox:terminal:output', handler)
+      return () => ipcRenderer.removeListener('sandbox:terminal:output', handler)
     }
   },
 

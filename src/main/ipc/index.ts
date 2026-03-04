@@ -735,6 +735,48 @@ export function registerIpcHandlers(): void {
     }
   })
 
+  // Execute command in sandbox
+  ipcMain.handle('sandbox:execute', async (event, projectId: string, command: string): Promise<string | { error: string }> => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    const { client: sandboxClient, error } = await getSandboxClient()
+    if (!sandboxClient) {
+      return { error: error || 'Sandbox not configured' }
+    }
+
+    const sandboxId = projectSandboxes.get(projectId)
+    if (!sandboxId) {
+      return { error: 'No sandbox found for project' }
+    }
+
+    try {
+      const outputs: string[] = []
+      for await (const cmdEvent of sandboxClient.execute(sandboxId, command)) {
+        if (cmdEvent.type === 'stdout') {
+          const content = cmdEvent.content || ''
+          outputs.push(content)
+          // Stream output to renderer
+          if (win && !win.isDestroyed()) {
+            win.webContents.send('sandbox:terminal:output', { content, type: 'stdout' })
+          }
+        } else if (cmdEvent.type === 'stderr') {
+          const content = cmdEvent.content || ''
+          outputs.push(`[stderr] ${content}`)
+          if (win && !win.isDestroyed()) {
+            win.webContents.send('sandbox:terminal:output', { content, type: 'stderr' })
+          }
+        } else if (cmdEvent.type === 'error') {
+          if (win && !win.isDestroyed()) {
+            win.webContents.send('sandbox:terminal:output', { content: cmdEvent.error || 'Unknown error', type: 'error' })
+          }
+        }
+      }
+      return outputs.join('\n')
+    } catch (err) {
+      console.error('[Sandbox] Failed to execute command:', err)
+      return { error: `Failed to execute command: ${(err as Error).message}` }
+    }
+  })
+
   // Reset sandbox client when config changes
   ipcMain.handle('sandbox:resetClient', async (): Promise<void> => {
     resetSandboxClient()
