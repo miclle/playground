@@ -269,8 +269,28 @@ export interface MessageRecord {
 }
 
 export function addMessage(sessionId: string, role: 'user' | 'assistant' | 'system', content: string): Message {
-  const id = generateId()
   const now = new Date().toISOString()
+
+  // Check for duplicate message (same session, role, and content within the last minute)
+  const oneMinuteAgo = new Date(Date.now() - 60000).toISOString()
+  const existingMessage = getDb().prepare(`
+    SELECT * FROM messages
+    WHERE session_id = ? AND role = ? AND content = ? AND created_at > ?
+    ORDER BY created_at DESC
+    LIMIT 1
+  `).get(sessionId, role, content, oneMinuteAgo) as MessageRecord | undefined
+
+  if (existingMessage) {
+    console.log('[Database] Skipping duplicate message:', { sessionId, role, contentLength: content.length })
+    return {
+      id: existingMessage.id,
+      role: existingMessage.role as 'user' | 'assistant' | 'system',
+      content: existingMessage.content,
+      timestamp: new Date(existingMessage.created_at)
+    }
+  }
+
+  const id = generateId()
 
   getDb().prepare(`
     INSERT INTO messages (id, session_id, role, content, created_at)

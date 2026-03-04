@@ -31,7 +31,9 @@ export function ChatPanel({ onOpenSettings, hasProject, projectId, onFilesChange
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [sessionId, setSessionId] = useState<string | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const savingMessageRef = useRef(false)
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -40,6 +42,56 @@ export function ChatPanel({ onOpenSettings, hasProject, projectId, onFilesChange
   useEffect(() => {
     scrollToBottom()
   }, [messages])
+
+  // Load or create session and load messages when project changes
+  useEffect(() => {
+    if (!projectId) {
+      setMessages([])
+      setSessionId(null)
+      return
+    }
+
+    const loadSession = async () => {
+      try {
+        // List existing sessions for this project
+        const sessions = await window.api?.session.list(projectId)
+
+        let currentSessionId: string
+
+        if (sessions && sessions.length > 0) {
+          // Use the most recent session
+          currentSessionId = sessions[0].id
+        } else {
+          // Create a new session
+          const newSession = await window.api?.session.create(projectId)
+          if (!newSession) {
+            console.error('[ChatPanel] Failed to create session')
+            return
+          }
+          currentSessionId = newSession.id
+        }
+
+        setSessionId(currentSessionId)
+
+        // Load messages for this session
+        const sessionMessages = await window.api?.message.list(currentSessionId)
+        if (sessionMessages) {
+          const formattedMessages: ChatMessage[] = sessionMessages.map((m) => ({
+            id: m.id,
+            role: m.role as 'user' | 'assistant',
+            content: m.content,
+            timestamp: new Date(m.timestamp),
+            toolCalls: []
+          }))
+          setMessages(formattedMessages)
+        }
+      } catch (err) {
+        console.error('[ChatPanel] Failed to load session:', err)
+      }
+    }
+
+    loadSession()
+  }, [projectId])
 
   // Set up AI event listeners
   useEffect(() => {
@@ -95,9 +147,17 @@ export function ChatPanel({ onOpenSettings, hasProject, projectId, onFilesChange
           onFilesChange?.()
         }
       } else if (chatEvent.type === 'done') {
+        // Save the completed assistant message to database
         setMessages((prev) => {
           const lastMessage = prev[prev.length - 1]
-          if (lastMessage?.isStreaming) {
+          if (lastMessage?.isStreaming && sessionId && !savingMessageRef.current) {
+            // Use ref to prevent duplicate saves in React Strict Mode
+            savingMessageRef.current = true
+            // Save to database
+            window.api?.message.add(sessionId, 'assistant', lastMessage.content)
+              .finally(() => {
+                savingMessageRef.current = false
+              })
             return [...prev.slice(0, -1), { ...lastMessage, isStreaming: false }]
           }
           return prev
@@ -122,15 +182,17 @@ export function ChatPanel({ onOpenSettings, hasProject, projectId, onFilesChange
       unsubscribeEvent?.()
       unsubscribeError?.()
     }
-  }, [])
+  }, [sessionId, onFilesChange])
 
   const handleSend = useCallback(async () => {
-    if (!input.trim() || isLoading) return
+    if (!input.trim() || isLoading || !sessionId) return
+
+    const userContent = input.trim()
 
     const userMessage: ChatMessage = {
       id: Date.now().toString(),
       role: 'user',
-      content: input.trim(),
+      content: userContent,
       timestamp: new Date()
     }
 
@@ -138,6 +200,9 @@ export function ChatPanel({ onOpenSettings, hasProject, projectId, onFilesChange
     setInput('')
     setIsLoading(true)
     setError(null)
+
+    // Save user message to database
+    await window.api?.message.add(sessionId, 'user', userContent)
 
     const assistantMessage: ChatMessage = {
       id: (Date.now() + 1).toString(),
@@ -160,7 +225,7 @@ export function ChatPanel({ onOpenSettings, hasProject, projectId, onFilesChange
       setError((err as Error).message)
       setIsLoading(false)
     }
-  }, [input, isLoading, messages, projectId])
+  }, [input, isLoading, messages, projectId, sessionId])
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
