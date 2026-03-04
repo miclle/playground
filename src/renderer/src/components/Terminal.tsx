@@ -1,159 +1,206 @@
-import { useState, useEffect, useRef } from 'react'
-import { Send, Loader2, Terminal } from 'lucide-react'
-import { cn } from '../lib/utils'
+import { useEffect, useRef } from 'react'
+import { Terminal } from 'xterm'
+import { FitAddon } from 'xterm-addon-fit'
+import { WebLinksAddon } from 'xterm-addon-web-links'
+import 'xterm/css/xterm.css'
+import './Terminal.css'
 
 interface TerminalPanelProps {
   projectId?: string
 }
 
-interface TerminalEntry {
-  type: 'command' | 'output' | 'error' | 'info' | 'stderr'
-  content: string
-  timestamp: Date
-}
-
 export function TerminalPanel({ projectId }: TerminalPanelProps) {
-  const [entries, setEntries] = useState<TerminalEntry[]>([
-    { type: 'info', content: 'Connected to sandbox. Type a command to execute.', timestamp: new Date() }
-  ])
-  const [command, setCommand] = useState('')
-  const [isExecuting, setIsExecuting] = useState(false)
-  const endRef = useRef<HTMLDivElement>(null)
+  const terminalRef = useRef<HTMLDivElement>(null)
+  const xtermRef = useRef<Terminal | null>(null)
+  const fitAddonRef = useRef<FitAddon | null>(null)
+  const currentLineRef = useRef('')
+  const isExecutingRef = useRef(false)
+  const commandHistoryRef = useRef<string[]>([])
+  const historyIndexRef = useRef<number>(-1)
 
-  // Auto-scroll to bottom when entries change
   useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [entries])
+    if (!terminalRef.current) return
 
-  // Listen for streaming terminal output
-  useEffect(() => {
-    if (!projectId) return
-
-    const unsubscribe = window.api?.sandbox.onTerminalOutput((data) => {
-      setEntries(prev => [...prev, {
-        type: data.type === 'stderr' ? 'stderr' : 'output',
-        content: data.content,
-        timestamp: new Date()
-      }])
+    const terminal = new Terminal({
+      allowTransparency: true,
+      theme: {
+        background: '#1a1a1a',
+        foreground: '#e0e0e0',
+        cursor: '#e0e0e0',
+        cursorAccent: '#1a1a1a',
+        selection: 'rgba(255, 255, 255, 0.3)',
+        black: '#000000',
+        red: '#cd3131',
+        green: '#0dbc79',
+        yellow: '#e5e510',
+        blue: '#2472c8',
+        magenta: '#bc3fbc',
+        cyan: '#11a8cd',
+        white: '#e5e5e5',
+        brightBlack: '#666666',
+        brightRed: '#f14c4c',
+        brightGreen: '#23d18b',
+        brightYellow: '#f5f543',
+        brightBlue: '#3b8eea',
+        brightMagenta: '#d670d6',
+        brightCyan: '#29b8db',
+        brightWhite: '#ffffff',
+      },
+      fontSize: 13,
+      cursorBlink: true,
+      cursorStyle: 'block',
+      scrollback: 1000,
+      tabStopWidth: 8,
     })
 
-    return () => unsubscribe?.()
+    const fitAddon = new FitAddon()
+    terminal.loadAddon(fitAddon)
+    terminal.loadAddon(new WebLinksAddon())
+
+    terminal.open(terminalRef.current)
+
+    // Wait for DOM to render before fitting
+    setTimeout(() => {
+      fitAddon.fit()
+      // Log terminal dimensions for debugging
+      console.log('[Terminal] Dimensions:', {
+        cols: terminal.cols,
+        rows: terminal.rows,
+        actual: terminalRef.current?.getBoundingClientRect()
+      })
+    }, 100)
+
+    xtermRef.current = terminal
+    fitAddonRef.current = fitAddon
+
+    // 显示欢迎消息
+    terminal.writeln('\x1b[1;36mWelcome to Playground Terminal\x1b[0m')
+    terminal.writeln('Connected to sandbox. Type a command to execute.\r')
+    writePrompt()
+
+    function writePrompt() {
+      terminal.write('\x1b[1;32m$\x1b[0m ')
+    }
+
+    function clearLine() {
+      terminal.write('\r\x1b[2K')
+      writePrompt()
+    }
+
+    // 执行命令
+    const executeCommand = async (cmd: string) => {
+      if (!projectId || isExecutingRef.current) return
+
+      // 添加到历史记录
+      commandHistoryRef.current.push(cmd)
+      historyIndexRef.current = -1
+
+      isExecutingRef.current = true
+
+      terminal.writeln('')
+      terminal.write(`\x1b[1;36m${cmd}\x1b[0m\r\n`)
+
+      // 设置 COLUMNS 环境变量以获得更好的输出格式
+      // 使用 shell 来设置环境变量
+      const cmdWithCols = `export COLUMNS=200; ${cmd}`
+
+      try {
+        // 监听流式输出
+        const unsubscribe = window.api?.sandbox.onTerminalOutput((data) => {
+          if (data.type === 'stderr') {
+            terminal.write(`\x1b[33m${data.content}\x1b[0m`)
+          } else {
+            terminal.write(data.content)
+          }
+        })
+
+        // 执行命令
+        await window.api?.sandbox.execute(projectId, cmdWithCols)
+
+        unsubscribe?.()
+
+        // 显示新提示符
+        terminal.writeln('')
+        writePrompt()
+      } catch (err) {
+        terminal.write(`\x1b[31mError: ${(err as Error).message}\x1b[0m\r\n`)
+        writePrompt()
+      } finally {
+        isExecutingRef.current = false
+      }
+    }
+
+    // 处理用户输入
+    terminal.onData((data: string) => {
+      if (isExecutingRef.current) return
+
+      if (data === '\r') {
+        // Enter key - 执行命令
+        const cmd = currentLineRef.current.trim()
+        if (cmd) {
+          executeCommand(cmd)
+        } else {
+          terminal.writeln('')
+          writePrompt()
+        }
+        currentLineRef.current = ''
+        historyIndexRef.current = -1
+      } else if (data === '\u007F') {
+        // Backspace
+        if (currentLineRef.current.length > 0) {
+          currentLineRef.current = currentLineRef.current.slice(0, -1)
+          terminal.write('\b \b')
+        }
+      } else if (data === '\u001B[A') {
+        // Arrow Up
+        const history = commandHistoryRef.current
+        if (history.length > 0 && historyIndexRef.current < history.length - 1) {
+          historyIndexRef.current++
+          clearLine()
+          const cmd = history[history.length - 1 - historyIndexRef.current]
+          currentLineRef.current = cmd
+          terminal.write(cmd)
+        }
+      } else if (data === '\u001B[B') {
+        // Arrow Down
+        const history = commandHistoryRef.current
+        if (historyIndexRef.current > 0) {
+          historyIndexRef.current--
+          clearLine()
+          const cmd = history[history.length - 1 - historyIndexRef.current]
+          currentLineRef.current = cmd
+          terminal.write(cmd)
+        } else if (historyIndexRef.current === 0) {
+          historyIndexRef.current = -1
+          clearLine()
+          currentLineRef.current = ''
+        }
+      } else if (data >= ' ' && data <= '~') {
+        // 可打印字符
+        currentLineRef.current += data
+        terminal.write(data)
+      }
+    })
+
+    // 窗口大小变化时重新适配
+    const resizeObserver = new ResizeObserver(() => {
+      fitAddon.fit()
+    })
+    resizeObserver.observe(terminalRef.current)
+
+    return () => {
+      resizeObserver.disconnect()
+      terminal.dispose()
+    }
   }, [projectId])
 
-  const executeCommand = async () => {
-    if (!command.trim() || !projectId || isExecuting) return
-
-    const cmd = command.trim()
-    setCommand('')
-    setIsExecuting(true)
-
-    // Add command to entries
-    setEntries(prev => [...prev, {
-      type: 'command',
-      content: `$ ${cmd}`,
-      timestamp: new Date()
-    }])
-
-    try {
-      // Execute command via IPC
-      const result = await window.api?.sandbox.execute(projectId, cmd)
-
-      if (result && typeof result === 'object' && 'error' in result) {
-        setEntries(prev => [...prev, {
-          type: 'error',
-          content: result.error,
-          timestamp: new Date()
-        }])
-      } else if (typeof result === 'string' && result) {
-        // Add final output if any (streaming should have handled most output)
-        setEntries(prev => {
-          // Don't add duplicate final output if streaming already handled it
-          const lastEntry = prev[prev.length - 1]
-          if (lastEntry?.type === 'output' && lastEntry.content === result) {
-            return prev
-          }
-          return [...prev, {
-            type: 'output',
-            content: result,
-            timestamp: new Date()
-          }]
-        })
-      }
-    } catch (err) {
-      setEntries(prev => [...prev, {
-        type: 'error',
-        content: (err as Error).message,
-        timestamp: new Date()
-      }])
-    } finally {
-      setIsExecuting(false)
-    }
-  }
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault()
-      executeCommand()
-    }
-  }
-
-  const getEntryColor = (type: TerminalEntry['type']) => {
-    switch (type) {
-      case 'command': return 'text-foreground font-semibold'
-      case 'output': return 'text-muted-foreground'
-      case 'error': return 'text-destructive'
-      case 'stderr': return 'text-yellow-500'
-      case 'info': return 'text-blue-400'
-      default: return 'text-muted-foreground'
-    }
-  }
-
   return (
-    <div className="h-full flex flex-col font-mono text-sm">
-      {/* Terminal output */}
-      <div className="flex-1 overflow-auto p-4 space-y-0.5">
-        {entries.map((entry, index) => (
-          <div key={index} className={cn('whitespace-pre-wrap break-words', getEntryColor(entry.type))}>
-            {entry.content}
-          </div>
-        ))}
-        {isExecuting && (
-          <div className="flex items-center gap-2 text-muted-foreground">
-            <Loader2 className="h-4 w-4 animate-spin" />
-            Executing...
-          </div>
-        )}
-        <div ref={endRef} />
-      </div>
-
-      {/* Input area */}
-      <div className="border-t border-border p-3 bg-muted/30">
-        <div className="flex items-center gap-2">
-          <Terminal className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-          <span className="text-muted-foreground flex-shrink-0">$</span>
-          <input
-            type="text"
-            value={command}
-            onChange={(e) => setCommand(e.target.value)}
-            onKeyDown={handleKeyDown}
-            disabled={isExecuting || !projectId}
-            className="flex-1 bg-transparent border-0 outline-none text-foreground placeholder:text-muted-foreground disabled:opacity-50"
-            placeholder={projectId ? 'Type a command...' : 'Select a project first...'}
-            autoFocus
-          />
-          <button
-            onClick={executeCommand}
-            disabled={isExecuting || !command.trim() || !projectId}
-            className="p-1.5 hover:bg-accent rounded disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
-          >
-            {isExecuting ? (
-              <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-            ) : (
-              <Send className="h-4 w-4 text-muted-foreground" />
-            )}
-          </button>
-        </div>
-      </div>
+    <div className="h-full flex flex-col bg-[#1a1a1a] terminal-container">
+      <div
+        ref={terminalRef}
+        className="flex-1 overflow-hidden"
+        style={{ padding: '8px' }}
+      />
     </div>
   )
 }

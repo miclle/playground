@@ -1,0 +1,22 @@
+/* Terminal 组件专用样式 - 强制等宽字体 */
+.terminal-container {
+  font-family: 'SF Mono', 'Monaco', 'Menlo', 'Courier New', monospace !important;
+  font-size: 13px;
+  line-height: 1.2;
+  letter-spacing: normal;
+  font-variant-ligatures: none;
+  font-feature-settings: 'liga' 0, 'calt' 0;
+}
+
+/* 确保 xterm.js 使用等宽字体 */
+.xterm {
+  font-family: 'SF Mono', 'Monaco', 'Menlo', 'Courier New', monospace !important;
+}
+
+.xterm .xterm-viewport {
+  font-family: 'SF Mono', 'Monaco', 'Menlo', 'Courier New', monospace !important;
+}
+
+.xterm .xterm-screen {
+  font-family: 'SF Mono', 'Monaco', 'Menlo', 'Courier New', monospace !important;
+}

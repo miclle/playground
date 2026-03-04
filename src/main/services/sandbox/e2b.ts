@@ -310,9 +310,17 @@ export class E2BSandboxClient implements SandboxClient {
       const sandbox = await this.ensureSandboxAlive(sandboxId)
 
       // Run command and get result
+      console.log('[E2B] Executing command:', command)
       const result = await sandbox.commands.run(command)
+      console.log('[E2B] Command result:', {
+        exitCode: result.exitCode,
+        stdout: result.stdout,
+        stderr: result.stderr,
+        stdoutLength: result.stdout?.length,
+        stderrLength: result.stderr?.length
+      })
 
-      // Yield stdout
+      // Yield stdout - pass through unchanged
       if (result.stdout) {
         yield { type: 'stdout', content: result.stdout }
       }

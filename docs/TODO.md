@@ -36,7 +36,42 @@ await sandbox.readFile(path)
 - 目录过滤更宽松，优先显示用户创建的文件
 - Preview 组件支持从沙箱读取并渲染文件
 
-### AI 工具调用 JSON 解析增强 ✅
+### 🖥️ xterm.js 终端模拟器集成 ✅ (新增)
+- ✅ 集成 xterm.js 作为终端模拟器
+- ✅ 支持命令历史（上下箭头浏览）
+- ✅ 支持流式输出显示
+- ✅ 支持 ANSI 颜色和格式
+- ✅ 添加终端适配插件
+- ✅ 添加链接点击插件
+
+**技术栈**:
+```json
+{
+  "xterm": "^5.3.0",
+  "xterm-addon-fit": "^0.8.0",
+  "xterm-addon-web-links": "^0.9.0"
+}
+```
+
+**Terminal 组件特性**:
+- 原生终端外观（暗色主题）
+- 自动适配容器大小
+- 命令历史记录
+- Backspace 删除支持
+- 可选文本复制
+
+**已知问题**:
+- ⚠️ `ls -al` 输出排版有轻微错位（字体渲染问题，不影响功能）
+
+### UI 面板分隔线优化 ✅
+- ✅ 三栏面板头部高度统一（`h-9`）
+- ✅ 左右分隔线可见（`border-border/60`）
+- ✅ ResizeHandle 组件优化（`w-0` 容器 + 分隔线）
+
+### 开发者工具控制 ✅
+- ✅ 默认不自动打开 DevTools
+- ✅ 菜单添加 "Toggle Developer Tools" 选项
+- ✅ 快捷键 `CmdOrCtrl+Shift+I` 手动打开
 
 ### AI 工具调用 JSON 解析增强 ✅
 - ✅ 增加 max_tokens 从 8192 到 16384
