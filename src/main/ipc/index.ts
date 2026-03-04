@@ -737,7 +737,6 @@ export function registerIpcHandlers(): void {
 
   // Execute command in sandbox
   ipcMain.handle('sandbox:execute', async (event, projectId: string, command: string): Promise<string | { error: string }> => {
-    const win = BrowserWindow.fromWebContents(event.sender)
     const { client: sandboxClient, error } = await getSandboxClient()
     if (!sandboxClient) {
       return { error: error || 'Sandbox not configured' }
@@ -754,20 +753,26 @@ export function registerIpcHandlers(): void {
         if (cmdEvent.type === 'stdout') {
           const content = cmdEvent.content || ''
           outputs.push(content)
-          // Stream output to renderer
-          if (win && !win.isDestroyed()) {
-            win.webContents.send('sandbox:terminal:output', { content, type: 'stdout' })
-          }
+          // Stream output to renderer - send to all windows
+          BrowserWindow.getAllWindows().forEach(win => {
+            if (!win.isDestroyed()) {
+              win.webContents.send('sandbox:terminal:output', { content, type: 'stdout' })
+            }
+          })
         } else if (cmdEvent.type === 'stderr') {
           const content = cmdEvent.content || ''
           outputs.push(`[stderr] ${content}`)
-          if (win && !win.isDestroyed()) {
-            win.webContents.send('sandbox:terminal:output', { content, type: 'stderr' })
-          }
+          BrowserWindow.getAllWindows().forEach(win => {
+            if (!win.isDestroyed()) {
+              win.webContents.send('sandbox:terminal:output', { content, type: 'stderr' })
+            }
+          })
         } else if (cmdEvent.type === 'error') {
-          if (win && !win.isDestroyed()) {
-            win.webContents.send('sandbox:terminal:output', { content: cmdEvent.error || 'Unknown error', type: 'error' })
-          }
+          BrowserWindow.getAllWindows().forEach(win => {
+            if (!win.isDestroyed()) {
+              win.webContents.send('sandbox:terminal:output', { content: cmdEvent.error || 'Unknown error', type: 'error' })
+            }
+          })
         }
       }
       return outputs.join('\n')
