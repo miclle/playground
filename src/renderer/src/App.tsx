@@ -8,6 +8,7 @@ import { Settings } from './components/Settings'
 import { ProjectSelector } from './components/ProjectSelector'
 import { ResizeHandle } from './components/ResizeHandle'
 import { EditorPanel } from './components/Editor'
+import { StatusBar } from './components/StatusBar'
 
 interface Project {
   id: string
@@ -374,6 +375,9 @@ function App() {
           </>
         )}
       </div>
+
+      {/* Status Bar */}
+      <StatusBar projectId={currentProject?.id} />
 
       {/* Modals */}
       {showSettings && <Settings onClose={() => setShowSettings(false)} />}
