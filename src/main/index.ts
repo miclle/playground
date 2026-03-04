@@ -97,6 +97,12 @@ function createMenu(mainWindow: BrowserWindow): void {
           click: () => mainWindow.webContents.send('menu:toggle-bottom-panel')
         },
         { type: 'separator' },
+        {
+          label: 'Toggle Developer Tools',
+          accelerator: 'CmdOrCtrl+Shift+I',
+          click: () => mainWindow.webContents.toggleDevTools()
+        },
+        { type: 'separator' },
         { role: 'reload' as const },
         { role: 'forceReload' as const },
         { type: 'separator' },
