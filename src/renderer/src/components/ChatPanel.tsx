@@ -23,9 +23,10 @@ interface ChatPanelProps {
   onOpenSettings: () => void
   hasProject: boolean
   projectId?: string
+  onFilesChange?: () => void
 }
 
-export function ChatPanel({ onOpenSettings, hasProject, projectId }: ChatPanelProps) {
+export function ChatPanel({ onOpenSettings, hasProject, projectId, onFilesChange }: ChatPanelProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
@@ -89,6 +90,10 @@ export function ChatPanel({ onOpenSettings, hasProject, projectId }: ChatPanelPr
           }
           return prev
         })
+        // Refresh file tree when files are written
+        if (chatEvent.toolName === 'write_file' || chatEvent.toolName === 'delete_file' || chatEvent.toolName === 'mkdir') {
+          onFilesChange?.()
+        }
       } else if (chatEvent.type === 'done') {
         setMessages((prev) => {
           const lastMessage = prev[prev.length - 1]

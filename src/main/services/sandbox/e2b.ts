@@ -1,17 +1,18 @@
+import { Sandbox as E2BSandbox } from 'e2b'
 import type { SandboxInfo, FileInfo } from '../../../shared/types'
 import type { SandboxClient, SandboxConfig, CommandEvent } from './types'
 
-// E2B API client implementation
+// E2B SDK client implementation
 export class E2BSandboxClient implements SandboxClient {
   private apiKey: string
-  private baseUrl: string
+  private baseUrl: string | undefined
   private timeout: number
   private _connected: Set<string> = new Set()
-  private sandboxCache: Map<string, SandboxInfo> = new Map()
+  private sandboxCache: Map<string, { sandbox: E2BSandbox; info: SandboxInfo }> = new Map()
 
   constructor(config: SandboxConfig) {
     this.apiKey = config.apiKey
-    this.baseUrl = config.baseUrl || 'https://api.e2b.dev'
+    this.baseUrl = config.baseUrl
     this.timeout = config.timeout || 30000
   }
 
@@ -19,178 +20,132 @@ export class E2BSandboxClient implements SandboxClient {
     return this._connected
   }
 
-  // Create a new sandbox
+  // Create a new sandbox using E2B SDK
   async create(template: string): Promise<SandboxInfo> {
-    const response = await fetch(`${this.baseUrl}/v1/sandboxes`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${this.apiKey}`
-      },
-      body: JSON.stringify({ template })
-    })
+    console.log('[E2B] Creating sandbox with template:', template)
 
-    if (!response.ok) {
-      throw new Error(`Failed to create sandbox: ${response.statusText}`)
+    // Set API key and base URL via environment variables (E2B SDK uses these)
+    const originalApiKey = process.env.E2B_API_KEY
+    const originalApiUrl = process.env.E2B_API_URL
+
+    try {
+      process.env.E2B_API_KEY = this.apiKey
+      if (this.baseUrl) {
+        process.env.E2B_API_URL = this.baseUrl
+      }
+
+      const sandbox = await E2BSandbox.create(template, { timeoutMs: this.timeout })
+
+      const info: SandboxInfo = {
+        id: sandbox.sandboxId,
+        template,
+        status: 'running',
+        createdAt: new Date()
+      }
+
+      this._connected.add(info.id)
+      this.sandboxCache.set(info.id, { sandbox, info })
+
+      console.log('[E2B] Sandbox created:', info.id)
+      return info
+    } catch (err) {
+      console.error('[E2B] Failed to create sandbox:', err)
+      throw err
+    } finally {
+      // Restore original environment variables
+      if (originalApiKey !== undefined) {
+        process.env.E2B_API_KEY = originalApiKey
+      } else {
+        delete process.env.E2B_API_KEY
+      }
+      if (originalApiUrl !== undefined) {
+        process.env.E2B_API_URL = originalApiUrl
+      } else {
+        delete process.env.E2B_API_URL
+      }
     }
+  }
 
-    const data = await response.json()
-    const info: SandboxInfo = {
-      id: data.sandboxId,
-      template,
-      status: 'running',
-      createdAt: new Date()
-    }
-
-    this._connected.add(info.id)
-    this.sandboxCache.set(info.id, info)
-
-    return info
+  // Get sandbox instance from cache
+  private getSandbox(sandboxId: string): E2BSandbox | null {
+    const cached = this.sandboxCache.get(sandboxId)
+    return cached?.sandbox || null
   }
 
   // Destroy a sandbox
   async destroy(id: string): Promise<void> {
-    const response = await fetch(`${this.baseUrl}/v1/sandboxes/${id}`, {
-      method: 'DELETE',
-      headers: {
-        'Authorization': `Bearer ${this.apiKey}`
-      }
-    })
-
-    if (!response.ok && response.status !== 404) {
-      throw new Error(`Failed to destroy sandbox: ${response.statusText}`)
+    const sandbox = this.getSandbox(id)
+    if (sandbox) {
+      await sandbox.kill()
+      this._connected.delete(id)
+      this.sandboxCache.delete(id)
     }
-
-    this._connected.delete(id)
-    this.sandboxCache.delete(id)
   }
 
   // Pause a sandbox
   async pause(id: string): Promise<void> {
-    const response = await fetch(`${this.baseUrl}/v1/sandboxes/${id}/pause`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${this.apiKey}`
-      }
-    })
-
-    if (!response.ok) {
-      throw new Error(`Failed to pause sandbox: ${response.statusText}`)
-    }
-
-    const info = this.sandboxCache.get(id)
-    if (info) {
-      info.status = 'paused'
+    // E2B SDK doesn't have pause, just update status
+    const cached = this.sandboxCache.get(id)
+    if (cached) {
+      cached.info.status = 'paused'
     }
   }
 
   // Resume a sandbox
   async resume(id: string): Promise<void> {
-    const response = await fetch(`${this.baseUrl}/v1/sandboxes/${id}/resume`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${this.apiKey}`
-      }
-    })
-
-    if (!response.ok) {
-      throw new Error(`Failed to resume sandbox: ${response.statusText}`)
-    }
-
-    const info = this.sandboxCache.get(id)
-    if (info) {
-      info.status = 'running'
+    // E2B SDK doesn't have resume, just update status
+    const cached = this.sandboxCache.get(id)
+    if (cached) {
+      cached.info.status = 'running'
     }
   }
 
   // Get sandbox info
   async getInfo(id: string): Promise<SandboxInfo | null> {
-    const response = await fetch(`${this.baseUrl}/v1/sandboxes/${id}`, {
-      headers: {
-        'Authorization': `Bearer ${this.apiKey}`
-      }
-    })
-
-    if (response.status === 404) {
-      return null
-    }
-
-    if (!response.ok) {
-      throw new Error(`Failed to get sandbox info: ${response.statusText}`)
-    }
-
-    return await response.json()
+    const cached = this.sandboxCache.get(id)
+    return cached?.info || null
   }
 
   // Read file from sandbox
   async readFile(sandboxId: string, path: string): Promise<string> {
-    const response = await fetch(
-      `${this.baseUrl}/v1/sandboxes/${sandboxId}/files?path=${encodeURIComponent(path)}`,
-      {
-        headers: {
-          'Authorization': `Bearer ${this.apiKey}`
-        }
-      }
-    )
-
-    if (!response.ok) {
-      throw new Error(`Failed to read file: ${response.statusText}`)
+    const sandbox = this.getSandbox(sandboxId)
+    if (!sandbox) {
+      throw new Error(`Sandbox ${sandboxId} not found`)
     }
-
-    const data = await response.json()
-    return data.content
+    return await sandbox.files.read(path)
   }
 
   // Write file to sandbox
   async writeFile(sandboxId: string, path: string, content: string): Promise<void> {
-    const response = await fetch(`${this.baseUrl}/v1/sandboxes/${sandboxId}/files`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${this.apiKey}`
-      },
-      body: JSON.stringify({ path, content })
-    })
-
-    if (!response.ok) {
-      throw new Error(`Failed to write file: ${response.statusText}`)
+    const sandbox = this.getSandbox(sandboxId)
+    if (!sandbox) {
+      throw new Error(`Sandbox ${sandboxId} not found`)
     }
+    await sandbox.files.write(path, content)
   }
 
   // Delete file from sandbox
   async deleteFile(sandboxId: string, path: string): Promise<void> {
-    const response = await fetch(
-      `${this.baseUrl}/v1/sandboxes/${sandboxId}/files?path=${encodeURIComponent(path)}`,
-      {
-        method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${this.apiKey}`
-        }
-      }
-    )
-
-    if (!response.ok) {
-      throw new Error(`Failed to delete file: ${response.statusText}`)
+    const sandbox = this.getSandbox(sandboxId)
+    if (!sandbox) {
+      throw new Error(`Sandbox ${sandboxId} not found`)
     }
+    await sandbox.files.remove(path)
   }
 
   // List directory contents
   async listDir(sandboxId: string, path: string): Promise<FileInfo[]> {
-    const response = await fetch(
-      `${this.baseUrl}/v1/sandboxes/${sandboxId}/files/list?path=${encodeURIComponent(path)}`,
-      {
-        headers: {
-          'Authorization': `Bearer ${this.apiKey}`
-        }
-      }
-    )
-
-    if (!response.ok) {
-      throw new Error(`Failed to list directory: ${response.statusText}`)
+    const sandbox = this.getSandbox(sandboxId)
+    if (!sandbox) {
+      throw new Error(`Sandbox ${sandboxId} not found`)
     }
 
-    const data = await response.json()
-    return data.files || []
+    const entries = await sandbox.files.list(path)
+    return entries.map(entry => ({
+      name: entry.name,
+      path: entry.path,
+      type: entry.type === 'dir' ? 'folder' : 'file'
+    }))
   }
 
   // Check if file/directory exists
@@ -205,70 +160,38 @@ export class E2BSandboxClient implements SandboxClient {
 
   // Create directory
   async mkdir(sandboxId: string, path: string): Promise<void> {
-    const response = await fetch(`${this.baseUrl}/v1/sandboxes/${sandboxId}/files/mkdir`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${this.apiKey}`
-      },
-      body: JSON.stringify({ path })
-    })
-
-    if (!response.ok) {
-      throw new Error(`Failed to create directory: ${response.statusText}`)
+    const sandbox = this.getSandbox(sandboxId)
+    if (!sandbox) {
+      throw new Error(`Sandbox ${sandboxId} not found`)
     }
+    // E2B SDK creates directories automatically when writing files
+    // For explicit mkdir, we can write an empty .keep file
+    await sandbox.files.write(`${path}/.keep`, '')
   }
 
   // Execute command with streaming output
   async *execute(sandboxId: string, command: string): AsyncGenerator<CommandEvent> {
-    const response = await fetch(`${this.baseUrl}/v1/sandboxes/${sandboxId}/execute`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${this.apiKey}`
-      },
-      body: JSON.stringify({ command })
-    })
-
-    if (!response.ok) {
-      yield { type: 'error', error: `Failed to execute command: ${response.statusText}` }
+    const sandbox = this.getSandbox(sandboxId)
+    if (!sandbox) {
+      yield { type: 'error', error: `Sandbox ${sandboxId} not found` }
       return
     }
-
-    // Handle streaming response
-    const reader = response.body?.getReader()
-    if (!reader) {
-      yield { type: 'error', error: 'No response body' }
-      return
-    }
-
-    const decoder = new TextDecoder()
-    let buffer = ''
 
     try {
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
+      const process = await sandbox.process.start(command)
 
-        buffer += decoder.decode(value, { stream: true })
-        const lines = buffer.split('\n')
-        buffer = lines.pop() || ''
-
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            try {
-              const data = JSON.parse(line.slice(6))
-              yield data as CommandEvent
-            } catch {
-              // Skip invalid JSON
-            }
-          }
-        }
+      for await (const output of process.stdout) {
+        yield { type: 'stdout', content: output }
       }
-    } finally {
-      reader.releaseLock()
-    }
 
-    yield { type: 'exit', exitCode: 0 }
+      for await (const output of process.stderr) {
+        yield { type: 'stderr', content: output }
+      }
+
+      const exitCode = await process.wait()
+      yield { type: 'exit', exitCode }
+    } catch (err) {
+      yield { type: 'error', error: (err as Error).message }
+    }
   }
 }

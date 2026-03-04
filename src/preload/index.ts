@@ -48,6 +48,13 @@ export interface IpcApi {
     add: (sessionId: string, role: 'user' | 'assistant' | 'system', content: string) => Promise<import('../shared/types').Message>
     list: (sessionId: string) => Promise<import('../shared/types').Message[]>
   }
+
+  // Sandbox operations
+  sandbox: {
+    getOrCreate: (projectId: string) => Promise<{ sandboxId: string } | { error: string }>
+    listDir: (projectId: string, path: string) => Promise<import('../shared/types').FileInfo[] | { error: string }>
+    readFile: (projectId: string, path: string) => Promise<string | { error: string }>
+  }
 }
 
 // Custom APIs for renderer
@@ -104,6 +111,13 @@ const api: IpcApi = {
   message: {
     add: (sessionId, role, content) => ipcRenderer.invoke('message:add', sessionId, role, content),
     list: (sessionId) => ipcRenderer.invoke('message:list', sessionId)
+  },
+
+  // Sandbox operations
+  sandbox: {
+    getOrCreate: (projectId) => ipcRenderer.invoke('sandbox:getOrCreate', projectId),
+    listDir: (projectId, path) => ipcRenderer.invoke('sandbox:listDir', projectId, path),
+    readFile: (projectId, path) => ipcRenderer.invoke('sandbox:readFile', projectId, path)
   }
 }
 

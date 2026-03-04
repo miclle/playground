@@ -1,5 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk'
-import type { Message, ChatOptions, ChatEvent } from '../../../shared/types'
+import type { Message, ChatOptions, ChatEvent, ToolDefinition } from '../../../shared/types'
 import type { AIService, AIConfig } from './types'
 
 export class ClaudeService implements AIService {
@@ -9,6 +9,7 @@ export class ClaudeService implements AIService {
   private temperature: number
   private maxTokens: number
   private abortController: AbortController | null = null
+  private tools: ToolDefinition[] = []
 
   constructor(config: AIConfig) {
     this.client = new Anthropic({
@@ -18,6 +19,10 @@ export class ClaudeService implements AIService {
     this.model = config.model || 'claude-sonnet-4-6-20250514'
     this.temperature = config.temperature ?? 0.7
     this.maxTokens = config.maxTokens ?? 4096
+  }
+
+  setTools(tools: ToolDefinition[]): void {
+    this.tools = tools
   }
 
   async *chat(messages: Message[], options?: ChatOptions): AsyncGenerator<ChatEvent> {
@@ -33,13 +38,24 @@ export class ClaudeService implements AIService {
           content: m.content
         }))
 
-      const stream = this.client.messages.stream({
+      const requestParams: Anthropic.Messages.MessageCreateParams = {
         model: options?.model || this.model,
         max_tokens: options?.maxTokens ?? this.maxTokens,
         temperature: options?.temperature ?? this.temperature,
         system: systemMessage?.content,
         messages: conversationMessages
-      })
+      }
+
+      // Add tools if available
+      if (this.tools.length > 0) {
+        requestParams.tools = this.tools.map(tool => ({
+          name: tool.name,
+          description: tool.description,
+          input_schema: tool.parameters as Anthropic.Messages.Tool['input_schema']
+        }))
+      }
+
+      const stream = this.client.messages.stream(requestParams)
 
       for await (const event of stream) {
         switch (event.type) {
@@ -54,7 +70,8 @@ export class ClaudeService implements AIService {
               yield {
                 type: 'tool_use',
                 toolName: event.content_block.name,
-                toolInput: event.content_block.input
+                toolInput: event.content_block.input,
+                toolCallId: event.content_block.id
               }
             }
             break

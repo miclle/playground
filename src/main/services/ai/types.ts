@@ -5,8 +5,8 @@ export interface AIService {
   // Send messages and get streaming response
   chat(messages: Message[], options?: ChatOptions): AsyncGenerator<ChatEvent>
 
-  // Available tools for function calling
-  tools?: ToolDefinition[]
+  // Set available tools for function calling
+  setTools(tools: ToolDefinition[]): void
 
   // Abort current request
   abort(): void

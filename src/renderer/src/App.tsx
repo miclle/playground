@@ -40,6 +40,7 @@ function App() {
   // Current project
   const [currentProject, setCurrentProject] = useState<Project | null>(null)
   const [projectFiles, setProjectFiles] = useState<FileNode[]>([])
+  const [selectedFile, setSelectedFile] = useState<string | undefined>()
 
   // Load last project on mount
   useEffect(() => {
@@ -68,23 +69,79 @@ function App() {
   }, [])
 
   // Project selection
-  const handleSelectProject = (project: Project) => {
+  const handleSelectProject = async (project: Project) => {
     setCurrentProject(project)
     setShowProjectSelector(false)
-    // TODO: Load project files from sandbox
-    setProjectFiles([])
+
+    // Initialize sandbox for project
+    try {
+      const result = await window.api?.sandbox.getOrCreate(project.id)
+      if (result && 'error' in result) {
+        console.error('Failed to initialize sandbox:', result.error)
+        // Still continue - sandbox might be configured later
+      } else {
+        // Load files from sandbox
+        await loadProjectFiles(project.id)
+      }
+    } catch (err) {
+      console.error('Failed to initialize sandbox:', err)
+    }
+  }
+
+  // Load files from sandbox
+  const loadProjectFiles = async (projectId: string) => {
+    try {
+      const result = await window.api?.sandbox.listDir(projectId, '/')
+      if (result && 'error' in result) {
+        console.error('Failed to load files:', result.error)
+        setProjectFiles([])
+        return
+      }
+
+      const files = result as import('../shared/types').FileInfo[]
+      if (files) {
+        // Convert FileInfo to FileNode
+        const fileNodes: FileNode[] = await Promise.all(
+          files.map(async (file) => {
+            const node: FileNode = {
+              name: file.name,
+              path: file.path,
+              type: file.type
+            }
+            // Load children for directories
+            if (file.type === 'folder') {
+              const childrenResult = await window.api?.sandbox.listDir(projectId, file.path)
+              if (childrenResult && !('error' in childrenResult)) {
+                node.children = childrenResult.map(child => ({
+                  name: child.name,
+                  path: child.path,
+                  type: child.type
+                }))
+              }
+            }
+            return node
+          })
+        )
+        setProjectFiles(fileNodes)
+      }
+    } catch (err) {
+      console.error('Failed to load project files:', err)
+      setProjectFiles([])
+    }
   }
 
   // File selection
   const handleFileSelect = (file: FileNode) => {
-    // TODO: Load file content into editor
-    console.log('Selected file:', file.path)
+    if (file.type === 'file') {
+      setSelectedFile(file.path)
+    }
   }
 
   // Refresh files
   const handleRefreshFiles = () => {
-    // TODO: Refresh files from sandbox
-    console.log('Refresh files')
+    if (currentProject) {
+      loadProjectFiles(currentProject.id)
+    }
   }
 
   // New file
@@ -129,6 +186,8 @@ function App() {
             onToggleTerminalMaximize={() => setIsTerminalMaximized(!isTerminalMaximized)}
             isTerminalMaximized={isTerminalMaximized}
             onCloseTerminal={() => setTerminalVisible(false)}
+            filePath={selectedFile}
+            projectId={currentProject?.id}
           />
         ) : (
           <div className="flex-1 flex flex-col overflow-hidden">
@@ -140,7 +199,10 @@ function App() {
               </button>
             </div>
             <div className="flex-1 overflow-hidden">
-              <EditorPanel />
+              <EditorPanel
+                filePath={selectedFile}
+                projectId={currentProject?.id}
+              />
             </div>
           </div>
         )}
@@ -156,6 +218,8 @@ function App() {
               <ChatPanel
                 onOpenSettings={() => setShowSettings(true)}
                 hasProject={!!currentProject}
+                projectId={currentProject?.id}
+                onFilesChange={handleRefreshFiles}
               />
             </div>
           </>

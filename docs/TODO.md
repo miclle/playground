@@ -2,7 +2,36 @@
 
 基于需求文档 `docs/requirement.md` 整理的开发任务清单。
 
-**状态**: ✅ 全部完成
+**状态**: 🔄 进行中
+
+---
+
+## 当前问题
+
+### Sandbox 沙箱集成问题
+
+**问题描述**: 使用七牛云兼容 e2b 的沙箱服务时，API 调用返回 404 Not Found。
+
+**已完成的改进**:
+1. ✅ 添加了官方 e2b SDK (`npm install e2b`)
+2. ✅ 重写了 E2BSandboxClient 使用官方 SDK
+3. ✅ 添加了沙箱测试脚本 `src/main/services/sandbox/test.ts`
+4. ✅ 添加了详细的调试日志
+5. ✅ 添加了 WebdriverIO E2E 测试框架
+
+**待验证**:
+- [ ] 使用官方 e2b SDK 后沙箱是否能正常工作
+- [ ] 七牛云沙箱 API 是否完全兼容 e2b SDK
+
+**测试方法**:
+```bash
+# 设置环境变量
+export E2B_API_KEY=your_api_key
+export E2B_API_URL=https://cn-yangzhou-1-sandbox.qiniuapi.com
+
+# 运行测试
+npx ts-node --esm src/main/services/sandbox/test.ts
+```
 
 ---
 

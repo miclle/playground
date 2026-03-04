@@ -189,13 +189,15 @@ npm run test:coverage # Run tests with coverage
 2. After completing any feature development or code changes, you MUST proactively run tests to verify the changes work correctly.
 
 ### Test Framework
-- **Vitest** is used as the test framework
+- **Vitest** is used as the unit test framework
 - **@testing-library/react** for React component testing
 - **happy-dom** as the test environment
+- **WebdriverIO + wdio-electron-service** for E2E UI automation testing
 
 ### Test File Conventions
-- Test files should be named `*.test.ts` or `*.test.tsx`
-- Place test files next to the source files they test
+- Unit test files should be named `*.test.ts` or `*.test.tsx`
+- E2E test files should be named `*.spec.ts` and placed in `e2e/` directory
+- Place unit test files next to the source files they test
 - Use `describe`/`it` blocks for organization
 
 ### What to Test
@@ -206,10 +208,18 @@ npm run test:coverage # Run tests with coverage
 
 ### Running Tests
 ```bash
-npm run test           # Run all tests once
-npm run test:watch     # Run tests in watch mode during development
+npm run test           # Run unit tests once
+npm run test:watch     # Run unit tests in watch mode during development
 npm run test:coverage  # Generate coverage report
+npm run test:e2e       # Run E2E tests (requires build first)
+npm run test:e2e:dev   # Run E2E tests without rebuild
 ```
+
+### E2E Testing with WebdriverIO
+- E2E tests are located in `e2e/` directory
+- Uses `wdio-electron-service` to test the Electron app
+- Configuration file: `wdio.conf.ts`
+- Tests run against the built application
 
 ### CI Integration
 Tests are run automatically in CI pipeline. All tests must pass before merging PRs.

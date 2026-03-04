@@ -13,6 +13,8 @@ interface CenterPanelProps {
   onToggleTerminalMaximize: () => void
   isTerminalMaximized: boolean
   onCloseTerminal: () => void
+  filePath?: string
+  projectId?: string
 }
 
 export function CenterPanel({
@@ -20,7 +22,9 @@ export function CenterPanel({
   onTerminalHeightChange,
   onToggleTerminalMaximize,
   isTerminalMaximized,
-  onCloseTerminal
+  onCloseTerminal,
+  filePath,
+  projectId
 }: CenterPanelProps) {
   const [activeTab, setActiveTab] = useState<EditorTab>('code')
 
@@ -62,7 +66,7 @@ export function CenterPanel({
 
         {/* Content */}
         <div className="flex-1 overflow-hidden">
-          {activeTab === 'code' ? <EditorPanel /> : <Preview />}
+          {activeTab === 'code' ? <EditorPanel filePath={filePath} projectId={projectId} /> : <Preview />}
         </div>
       </div>
 

@@ -4,7 +4,6 @@ import * as config from '../services/config'
 import { createAIService } from '../services/ai'
 import { createSandboxClient } from '../services/sandbox'
 import type { AIConfig } from '../services/ai/types'
-import type { SandboxConfig } from '../services/sandbox/types'
 import type { Project, Session, Message, ChatEvent } from '../../shared/types'
 import type { ToolDefinition } from '../../shared/types'
 
@@ -79,8 +78,58 @@ const SANDBOX_TOOLS: ToolDefinition[] = [
   }
 ]
 
-// Store active sandbox ID (per project)
+// Store active sandbox ID (per project) and sandbox client
 const projectSandboxes = new Map<string, string>()
+let globalSandboxClient: ReturnType<typeof createSandboxClient> | null = null
+
+// Get or create sandbox client
+async function getSandboxClient(): Promise<{ client: ReturnType<typeof createSandboxClient> | null; error: string | null }> {
+  // Return cached client if available
+  if (globalSandboxClient) {
+    console.log('[Sandbox] Using cached client')
+    return { client: globalSandboxClient, error: null }
+  }
+
+  // Load sandbox config from database
+  const sandboxConfigStr = db.getSetting('sandbox_config')
+  console.log('[Sandbox] Config string:', sandboxConfigStr ? 'exists' : 'not found')
+
+  if (!sandboxConfigStr) {
+    return { client: null, error: 'Sandbox config not found. Please configure sandbox settings in Settings > Sandbox.' }
+  }
+
+  try {
+    const sandboxConfigData = JSON.parse(sandboxConfigStr)
+    console.log('[Sandbox] Config data:', { baseUrl: sandboxConfigData.baseUrl, template: sandboxConfigData.template })
+
+    const sandboxApiKey = await config.getApiKey('sandbox_main')
+    console.log('[Sandbox] API key:', sandboxApiKey ? `exists (${sandboxApiKey.length} chars)` : 'not found')
+
+    if (!sandboxApiKey) {
+      return { client: null, error: 'Sandbox API key not found. Please configure sandbox settings in Settings > Sandbox.' }
+    }
+
+    const baseUrl = sandboxConfigData.baseUrl || 'https://api.e2b.dev'
+    console.log('[Sandbox] Creating client with baseUrl:', baseUrl)
+
+    globalSandboxClient = createSandboxClient({
+      apiKey: sandboxApiKey,
+      baseUrl: baseUrl,
+      timeout: 60000
+    })
+    console.log('[Sandbox] Client created successfully')
+    return { client: globalSandboxClient, error: null }
+  } catch (err) {
+    const errorMsg = `Failed to create sandbox client: ${(err as Error).message}`
+    console.error('[Sandbox]', errorMsg, err)
+    return { client: null, error: errorMsg }
+  }
+}
+
+// Reset sandbox client (call when config changes)
+function resetSandboxClient(): void {
+  globalSandboxClient = null
+}
 
 // Register all IPC handlers
 export function registerIpcHandlers(): void {
@@ -119,25 +168,6 @@ export function registerIpcHandlers(): void {
       return
     }
 
-    // Get sandbox config
-    const sandboxConfigStr = db.getSetting('sandbox_config')
-    let sandboxConfig: SandboxConfig | null = null
-    if (sandboxConfigStr) {
-      try {
-        const sandboxConfigData = JSON.parse(sandboxConfigStr)
-        const sandboxApiKey = await config.getApiKey('sandbox_main')
-        if (sandboxApiKey) {
-          sandboxConfig = {
-            apiKey: sandboxApiKey,
-            baseUrl: sandboxConfigData.baseUrl,
-            timeout: 60000
-          }
-        }
-      } catch {
-        // Sandbox not configured, continue without it
-      }
-    }
-
     const aiConfig: AIConfig = {
       provider: aiConfigData.provider,
       apiKey,
@@ -149,7 +179,8 @@ export function registerIpcHandlers(): void {
       const aiService = createAIService(aiConfig)
       aiService.setTools(SANDBOX_TOOLS)
 
-      const sandboxClient = sandboxConfig ? createSandboxClient(sandboxConfig) : null
+      // Get sandbox client using global function
+      const { client: sandboxClient, error: sandboxError } = await getSandboxClient()
 
       // Get or create sandbox for project
       let sandboxId: string | null = null
@@ -157,13 +188,23 @@ export function registerIpcHandlers(): void {
         sandboxId = projectSandboxes.get(projectId) || null
         if (!sandboxId) {
           try {
-            const sandboxInfo = await sandboxClient.create('nodejs-20')
+            console.log('[Sandbox] Creating new sandbox for project:', projectId)
+            const sandboxConfigStr = db.getSetting('sandbox_config')
+            const sandboxConfigData = sandboxConfigStr ? JSON.parse(sandboxConfigStr) : {}
+            const template = sandboxConfigData.template || 'nodejs-20'
+
+            const sandboxInfo = await sandboxClient.create(template)
             sandboxId = sandboxInfo.id
             projectSandboxes.set(projectId, sandboxId)
+            console.log('[Sandbox] Created sandbox:', sandboxId)
           } catch (err) {
-            console.error('Failed to create sandbox:', err)
+            console.error('[Sandbox] Failed to create sandbox:', err)
           }
+        } else {
+          console.log('[Sandbox] Using existing sandbox:', sandboxId)
         }
+      } else if (sandboxError) {
+        console.error('[Sandbox] Client not available:', sandboxError)
       }
 
       // Convert messages
@@ -205,11 +246,12 @@ export function registerIpcHandlers(): void {
         // Execute tool calls and collect results
         for (const toolCall of toolCalls) {
           if (!sandboxClient || !sandboxId) {
+            const errorMsg = sandboxError || 'Sandbox not available. Please configure sandbox settings in Settings > Sandbox.'
             win.webContents.send('ai:chat:event', {
               type: 'tool_result',
               toolCallId: toolCall.id,
               toolName: toolCall.name,
-              toolResult: { error: 'Sandbox not available. Please configure sandbox settings.' }
+              toolResult: { error: errorMsg }
             } as ChatEvent)
             continue
           }
@@ -342,11 +384,20 @@ export function registerIpcHandlers(): void {
 
   // Save sandbox config
   ipcMain.handle('config:save:sandbox', async (_event, data: { apiKey: string; baseUrl?: string; template?: string }): Promise<void> => {
+    console.log('[Sandbox] Saving config:', { baseUrl: data.baseUrl, template: data.template, apiKeyLength: data.apiKey?.length })
     await config.storeApiKey('sandbox_main', data.apiKey)
     db.setSetting('sandbox_config', JSON.stringify({
       baseUrl: data.baseUrl,
       template: data.template
     }))
+    // Reset sandbox client so it will be recreated with new config
+    resetSandboxClient()
+    console.log('[Sandbox] Config saved, client reset')
+
+    // Verify save
+    const savedConfig = db.getSetting('sandbox_config')
+    const savedKey = await config.getApiKey('sandbox_main')
+    console.log('[Sandbox] Verification - Config:', savedConfig ? 'exists' : 'missing', 'Key:', savedKey ? 'exists' : 'missing')
   })
 
   // Load sandbox config
@@ -481,5 +532,83 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle('profile:setActive', async (_event, id: string): Promise<void> => {
     config.setActiveProfileId(id)
+  })
+
+  // ============ Sandbox Handlers ============
+
+  // Get or create sandbox for project
+  ipcMain.handle('sandbox:getOrCreate', async (_event, projectId: string): Promise<{ sandboxId: string } | { error: string }> => {
+    const { client: sandboxClient, error } = await getSandboxClient()
+    if (!sandboxClient) {
+      return { error: error || 'Sandbox not configured' }
+    }
+
+    let sandboxId = projectSandboxes.get(projectId)
+    if (!sandboxId) {
+      try {
+        const sandboxConfigStr = db.getSetting('sandbox_config')
+        const sandboxConfigData = sandboxConfigStr ? JSON.parse(sandboxConfigStr) : {}
+        const template = sandboxConfigData.template || 'nodejs-20'
+
+        console.log('[Sandbox] Creating sandbox for project:', projectId, 'template:', template)
+        const sandboxInfo = await sandboxClient.create(template)
+        sandboxId = sandboxInfo.id
+        projectSandboxes.set(projectId, sandboxId)
+
+        // Update project with sandbox ID
+        db.updateProject(projectId, { sandboxId })
+        console.log('[Sandbox] Created sandbox:', sandboxId)
+      } catch (err) {
+        console.error('[Sandbox] Failed to create sandbox:', err)
+        return { error: `Failed to create sandbox: ${(err as Error).message}` }
+      }
+    }
+
+    return { sandboxId }
+  })
+
+  // List directory contents in sandbox
+  ipcMain.handle('sandbox:listDir', async (_event, projectId: string, path: string): Promise<import('../../shared/types').FileInfo[] | { error: string }> => {
+    const { client: sandboxClient, error } = await getSandboxClient()
+    if (!sandboxClient) {
+      return { error: error || 'Sandbox not configured' }
+    }
+
+    const sandboxId = projectSandboxes.get(projectId)
+    if (!sandboxId) {
+      return { error: 'No sandbox found for project' }
+    }
+
+    try {
+      return await sandboxClient.listDir(sandboxId, path)
+    } catch (err) {
+      console.error('[Sandbox] Failed to list directory:', err)
+      return { error: `Failed to list directory: ${(err as Error).message}` }
+    }
+  })
+
+  // Read file content from sandbox
+  ipcMain.handle('sandbox:readFile', async (_event, projectId: string, path: string): Promise<string | { error: string }> => {
+    const { client: sandboxClient, error } = await getSandboxClient()
+    if (!sandboxClient) {
+      return { error: error || 'Sandbox not configured' }
+    }
+
+    const sandboxId = projectSandboxes.get(projectId)
+    if (!sandboxId) {
+      return { error: 'No sandbox found for project' }
+    }
+
+    try {
+      return await sandboxClient.readFile(sandboxId, path)
+    } catch (err) {
+      console.error('[Sandbox] Failed to read file:', err)
+      return { error: `Failed to read file: ${(err as Error).message}` }
+    }
+  })
+
+  // Reset sandbox client when config changes
+  ipcMain.handle('sandbox:resetClient', async (): Promise<void> => {
+    resetSandboxClient()
   })
 }
