@@ -144,3 +144,20 @@ dist/
 
 # macOS
 .DS_Store
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Electron build artifacts
+*.dmg
+*.dmg-block
+*.exe
+*.AppImage
+*.deb
+
+# Temporary test files
+test-*.mjs
+test-*.cjs
+test-*.ts
