@@ -68,7 +68,7 @@ export class OpenAIService implements AIService {
         model: options?.model || this.model,
         messages: openaiMessages,
         temperature: options?.temperature ?? this.temperature,
-        max_tokens: options?.maxTokens ?? this.maxTokens,
+        max_tokens: options?.maxTokens ?? 16384, // Increased to 16k to handle larger file content in tool calls
         stream: true
       }
 
@@ -106,14 +106,50 @@ export class OpenAIService implements AIService {
         if (toolCalls) {
           for (const toolCall of toolCalls) {
             if (toolCall.id) {
-              // Start of new tool call
+              // Start of new tool call - yield previous one first
               if (currentToolCall) {
-                // Yield previous tool call
-                yield {
-                  type: 'tool_use',
-                  toolName: currentToolCall.name,
-                  toolInput: currentToolCall.arguments ? JSON.parse(currentToolCall.arguments) : {},
-                  toolCallId: currentToolCall.id
+                try {
+                  let toolInput = currentToolCall.arguments ? JSON.parse(currentToolCall.arguments) : {}
+                  yield {
+                    type: 'tool_use',
+                    toolName: currentToolCall.name,
+                    toolInput,
+                    toolCallId: currentToolCall.id
+                  }
+                } catch (e) {
+                  console.error('[OpenAI] Failed to parse tool arguments:', e)
+                  // Try to complete truncated JSON
+                  const args = currentToolCall.arguments
+                  if (args) {
+                    try {
+                      let completed = args
+                      // Handle unterminated strings
+                      let quoteCount = 0
+                      for (let i = 0; i < completed.length; i++) {
+                        if (completed[i] === '"' && (i === 0 || completed[i - 1] !== '\\')) {
+                          quoteCount++
+                        }
+                      }
+                      if (quoteCount % 2 !== 0) {
+                        completed += '"'
+                      }
+                      // Add missing brackets
+                      const openBraces = (completed.match(/\{/g) || []).length
+                      const closeBraces = (completed.match(/\}/g) || []).length
+                      for (let j = 0; j < openBraces - closeBraces; j++) {
+                        completed += '}'
+                      }
+                      const toolInput = JSON.parse(completed)
+                      yield {
+                        type: 'tool_use',
+                        toolName: currentToolCall.name,
+                        toolInput,
+                        toolCallId: currentToolCall.id
+                      }
+                    } catch (e2) {
+                      console.error('[OpenAI] JSON completion failed:', e2)
+                    }
+                  }
                 }
               }
               currentToolCall = {
@@ -122,7 +158,7 @@ export class OpenAIService implements AIService {
                 arguments: toolCall.function?.arguments || ''
               }
             } else if (currentToolCall && toolCall.function?.arguments) {
-              // Continue building arguments
+              // Continue building arguments (streamed JSON)
               currentToolCall.arguments += toolCall.function.arguments
             }
           }
@@ -133,11 +169,48 @@ export class OpenAIService implements AIService {
         if (finishReason === 'stop' || finishReason === 'tool_calls') {
           // Yield any remaining tool call
           if (currentToolCall) {
-            yield {
-              type: 'tool_use',
-              toolName: currentToolCall.name,
-              toolInput: currentToolCall.arguments ? JSON.parse(currentToolCall.arguments) : {},
-              toolCallId: currentToolCall.id
+            try {
+              let toolInput = currentToolCall.arguments ? JSON.parse(currentToolCall.arguments) : {}
+              yield {
+                type: 'tool_use',
+                toolName: currentToolCall.name,
+                toolInput,
+                toolCallId: currentToolCall.id
+              }
+            } catch (e) {
+              console.error('[OpenAI] Failed to parse tool arguments at finish:', e)
+              // Try to complete truncated JSON
+              const args = currentToolCall.arguments
+              if (args) {
+                try {
+                  let completed = args
+                  // Handle unterminated strings
+                  let quoteCount = 0
+                  for (let i = 0; i < completed.length; i++) {
+                    if (completed[i] === '"' && (i === 0 || completed[i - 1] !== '\\')) {
+                      quoteCount++
+                    }
+                  }
+                  if (quoteCount % 2 !== 0) {
+                    completed += '"'
+                  }
+                  // Add missing brackets
+                  const openBraces = (completed.match(/\{/g) || []).length
+                  const closeBraces = (completed.match(/\}/g) || []).length
+                  for (let j = 0; j < openBraces - closeBraces; j++) {
+                    completed += '}'
+                  }
+                  const toolInput = JSON.parse(completed)
+                  yield {
+                    type: 'tool_use',
+                    toolName: currentToolCall.name,
+                    toolInput,
+                    toolCallId: currentToolCall.id
+                  }
+                } catch (e2) {
+                  console.error('[OpenAI] JSON completion failed:', e2)
+                }
+              }
             }
             currentToolCall = null
           }

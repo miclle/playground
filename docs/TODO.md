@@ -2,13 +2,72 @@
 
 基于需求文档 `docs/requirement.md` 整理的开发任务清单。
 
-**状态**: 🔄 进行中
+**状态**: ✅ 基本完成
 
 ---
 
-## 当前问题
+## 最新更新 (2026-03-04)
 
-### Sandbox 沙箱集成问题
+### AI 工具调用 JSON 解析增强 ✅
+- ✅ 增加 max_tokens 从 8192 到 16384
+- ✅ 添加未终止字符串检测和处理（引号计数）
+- ✅ 改进 JSON 补全逻辑（括号匹配 + 字符串终止）
+- ✅ 同时应用于 Claude 和 OpenAI 服务
+- ✅ IPC 处理器跳过包含 `_error` 的工具调用，避免执行失败参数
+
+**修复内容**:
+```typescript
+// 检测未终止的字符串
+let quoteCount = 0
+for (let i = 0; i < completed.length; i++) {
+  if (completed[i] === '"' && (i === 0 || completed[i - 1] !== '\\')) {
+    quoteCount++
+  }
+}
+if (quoteCount % 2 !== 0) {
+  completed += '"'  // 添加缺失的闭合引号
+}
+```
+
+### 文件列表刷新机制完善 ✅
+- ✅ 修复 `loadProjectFiles` 函数依赖问题（使用 `useCallback`）
+- ✅ 添加详细调试日志到文件加载流程
+- ✅ 修复 `useEffect` 依赖数组
+
+**修复内容**:
+```typescript
+// 使用 useCallback 避免依赖问题
+const loadProjectFiles = useCallback(async (projectId: string) => {
+  console.log('[App] loadProjectFiles called for project:', projectId)
+  // ... 文件加载逻辑
+}, [])
+
+// 正确的依赖数组
+useEffect(() => {
+  if (currentProject) {
+    loadProjectFiles(currentProject.id)
+  }
+}, [currentProject, loadProjectFiles])
+```
+
+### 模板名称映射修复 ✅
+- ✅ 添加模板名称映射功能 (`src/main/services/sandbox/e2b.ts`)
+- ✅ 将用户友好的模板名（`nodejs`）映射到实际模板名（`base-latest`）
+- ✅ 兼容七牛云等非官方 e2b 服务
+
+### 沙箱超时自动重试 ✅
+- ✅ 添加 `ensureSandboxAlive()` 函数
+- ✅ `sandbox:listDir` 自动检测超时并重建沙箱
+
+### 测试环境
+- ✅ 测试覆盖：18 个测试用例全部通过
+
+### 当前状态
+- Dev 服务器运行于 `http://localhost:5176/`
+- AI 工具调用已验证工作正常
+- 文件写入成功 (`snake_game.html`)
+
+#### Sandbox 沙箱集成待验证
 
 **问题描述**: 使用七牛云兼容 e2b 的沙箱服务时，API 调用返回 404 Not Found。
 

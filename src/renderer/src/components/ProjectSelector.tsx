@@ -142,13 +142,13 @@ export function ProjectSelector({ onClose, onSelectProject }: ProjectSelectorPro
           ) : (
             <div className="space-y-1">
               {projects.map((project) => (
-                <button
+                <div
                   key={project.id}
-                  onClick={() => onSelectProject(project)}
                   className={cn(
-                    'w-full flex items-center justify-between p-3 rounded-lg text-left',
+                    'w-full flex items-center justify-between p-3 rounded-lg text-left cursor-pointer',
                     'hover:bg-accent transition-colors group'
                   )}
+                  onClick={() => onSelectProject(project)}
                 >
                   <div className="flex items-center gap-3">
                     <Folder className="h-5 w-5 text-muted-foreground" />
@@ -167,7 +167,7 @@ export function ProjectSelector({ onClose, onSelectProject }: ProjectSelectorPro
                   >
                     <Trash2 className="h-4 w-4" />
                   </button>
-                </button>
+                </div>
               ))}
             </div>
           )}

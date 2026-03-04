@@ -189,12 +189,11 @@ Configure sandbox connection:
 
 ### Future Enhancements
 
-- [ ] Settings UI
-- [ ] Project list view
-- [ ] Multiple themes (light/dark)
-- [ ] Keyboard shortcuts
+- [ ] Multiple themes (light/dark mode)
+- [ ] More keyboard shortcuts
 - [ ] Code signing for distribution
 - [ ] CI/CD pipeline
+- [ ] E2E tests with WebdriverIO
 
 ## Contributing
 

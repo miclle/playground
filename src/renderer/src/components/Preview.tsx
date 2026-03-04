@@ -4,17 +4,44 @@ import { Loader2, RefreshCw, ExternalLink } from 'lucide-react'
 interface PreviewProps {
   url?: string
   htmlContent?: string
+  filePath?: string
+  projectId?: string
 }
 
-export function Preview({ url, htmlContent }: PreviewProps) {
+export function Preview({ url, htmlContent, filePath, projectId }: PreviewProps) {
   const iframeRef = useRef<HTMLIFrameElement>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [content, setContent] = useState<string | undefined>(htmlContent)
 
+  // Load file content from sandbox when filePath changes
   useEffect(() => {
-    setIsLoading(true)
-    setError(null)
-  }, [url, htmlContent])
+    const loadFile = async () => {
+      if (!filePath || !projectId) {
+        setContent(htmlContent)
+        setIsLoading(false)
+        return
+      }
+
+      setIsLoading(true)
+      setError(null)
+
+      try {
+        const result = await window.api?.sandbox.readFile(projectId, filePath)
+        if (result && typeof result === 'object' && 'error' in result) {
+          setError(`Failed to load file: ${result.error}`)
+        } else if (typeof result === 'string') {
+          setContent(result)
+        }
+      } catch (err) {
+        setError(`Failed to load file: ${(err as Error).message}`)
+      } finally {
+        setIsLoading(false)
+      }
+    }
+
+    loadFile()
+  }, [filePath, projectId, htmlContent])
 
   const handleLoad = () => {
     setIsLoading(false)
@@ -39,12 +66,12 @@ export function Preview({ url, htmlContent }: PreviewProps) {
     }
   }
 
-  if (!url && !htmlContent) {
+  if (!url && !htmlContent && !filePath) {
     return (
       <div className="h-full flex items-center justify-center text-muted-foreground">
         <div className="text-center">
           <p>No preview available</p>
-          <p className="text-sm mt-1">Run your code to see the output</p>
+          <p className="text-sm mt-1">Select a file to preview</p>
         </div>
       </div>
     )
@@ -89,10 +116,10 @@ export function Preview({ url, htmlContent }: PreviewProps) {
             <p className="text-destructive">{error}</p>
           </div>
         )}
-        {htmlContent ? (
+        {content ? (
           <iframe
             ref={iframeRef}
-            srcDoc={htmlContent}
+            srcDoc={content}
             className="w-full h-full border-0"
             onLoad={handleLoad}
             onError={handleError}

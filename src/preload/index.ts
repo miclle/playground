@@ -54,6 +54,7 @@ export interface IpcApi {
     getOrCreate: (projectId: string) => Promise<{ sandboxId: string } | { error: string }>
     listDir: (projectId: string, path: string) => Promise<import('../shared/types').FileInfo[] | { error: string }>
     readFile: (projectId: string, path: string) => Promise<string | { error: string }>
+    onFilesChanged: (callback: (data: { sandboxId: string; path: string }) => void) => () => void
   }
 }
 
@@ -117,7 +118,12 @@ const api: IpcApi = {
   sandbox: {
     getOrCreate: (projectId) => ipcRenderer.invoke('sandbox:getOrCreate', projectId),
     listDir: (projectId, path) => ipcRenderer.invoke('sandbox:listDir', projectId, path),
-    readFile: (projectId, path) => ipcRenderer.invoke('sandbox:readFile', projectId, path)
+    readFile: (projectId, path) => ipcRenderer.invoke('sandbox:readFile', projectId, path),
+    onFilesChanged: (callback) => {
+      const handler = (_event, data) => callback(data)
+      ipcRenderer.on('sandbox:files:changed', handler)
+      return () => ipcRenderer.removeListener('sandbox:files:changed', handler)
+    }
   }
 }
 

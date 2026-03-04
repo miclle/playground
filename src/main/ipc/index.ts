@@ -115,7 +115,7 @@ async function getSandboxClient(): Promise<{ client: ReturnType<typeof createSan
     globalSandboxClient = createSandboxClient({
       apiKey: sandboxApiKey,
       baseUrl: baseUrl,
-      timeout: 60000
+      timeout: 300000 // 5 minutes for long-running operations
     })
     console.log('[Sandbox] Client created successfully')
     return { client: globalSandboxClient, error: null }
@@ -129,6 +129,42 @@ async function getSandboxClient(): Promise<{ client: ReturnType<typeof createSan
 // Reset sandbox client (call when config changes)
 function resetSandboxClient(): void {
   globalSandboxClient = null
+}
+
+// Check if sandbox is still alive, recreate if needed
+async function ensureSandboxAlive(projectId: string, sandboxId: string): Promise<{ alive: boolean; newSandboxId?: string }> {
+  const { client: sandboxClient } = await getSandboxClient()
+  if (!sandboxClient) {
+    return { alive: false }
+  }
+
+  try {
+    // Try to get sandbox info to check if it's still alive
+    const info = await sandboxClient.getInfo(sandboxId)
+    if (info && info.status === 'running') {
+      return { alive: true }
+    }
+  } catch (err) {
+    // Sandbox is not accessible
+    console.log('[Sandbox] Sandbox not accessible, will recreate:', (err as Error).message)
+  }
+
+  // Sandbox is dead, recreate it
+  try {
+    const sandboxConfigStr = db.getSetting('sandbox_config')
+    const sandboxConfigData = sandboxConfigStr ? JSON.parse(sandboxConfigStr) : {}
+    const template = sandboxConfigData.template || 'nodejs-20'
+
+    console.log('[Sandbox] Recreating sandbox for project:', projectId)
+    const sandboxInfo = await sandboxClient.create(template)
+    projectSandboxes.set(projectId, sandboxInfo.id)
+    db.updateProject(projectId, { sandboxId: sandboxInfo.id })
+    console.log('[Sandbox] Recreated sandbox:', sandboxInfo.id)
+    return { alive: true, newSandboxId: sandboxInfo.id }
+  } catch (err) {
+    console.error('[Sandbox] Failed to recreate sandbox:', err)
+    return { alive: false }
+  }
 }
 
 // Register all IPC handlers
@@ -231,6 +267,7 @@ export function registerIpcHandlers(): void {
           win.webContents.send('ai:chat:event', chatEvent)
 
           if (chatEvent.type === 'tool_use') {
+            console.log('[IPC] Received tool_use event:', { toolName: chatEvent.toolName, toolCallId: chatEvent.toolCallId, toolInput: chatEvent.toolInput })
             hasToolCalls = true
             toolCalls.push({
               id: chatEvent.toolCallId || `tool-${Date.now()}`,
@@ -245,6 +282,29 @@ export function registerIpcHandlers(): void {
 
         // Execute tool calls and collect results
         for (const toolCall of toolCalls) {
+          console.log('[IPC] Executing tool call:', { id: toolCall.id, name: toolCall.name, input: toolCall.input })
+
+          // Check if toolInput contains error from JSON parsing failure
+          if (toolCall.input && '_error' in toolCall.input) {
+            console.error('[IPC] Tool input contains error, skipping execution:', toolCall.input)
+            win.webContents.send('ai:chat:event', {
+              type: 'tool_result',
+              toolCallId: toolCall.id,
+              toolName: toolCall.name,
+              toolResult: { error: 'Tool input parsing failed. Please try a simpler request.' }
+            } as ChatEvent)
+
+            // Add error message to conversation
+            currentMessages.push({
+              id: `tool-error-${toolCall.id}`,
+              role: 'tool',
+              content: JSON.stringify({ error: 'Tool input parsing failed' }),
+              timestamp: new Date(),
+              toolCallId: toolCall.id
+            } as Message & { toolCallId: string })
+            continue
+          }
+
           if (!sandboxClient || !sandboxId) {
             const errorMsg = sandboxError || 'Sandbox not available. Please configure sandbox settings in Settings > Sandbox.'
             win.webContents.send('ai:chat:event', {
@@ -265,9 +325,26 @@ export function registerIpcHandlers(): void {
                 break
 
               case 'write_file': {
-                const { path, content } = toolCall.input as { path: string; content: string }
-                await sandboxClient.writeFile(sandboxId, path, content)
-                result = { success: true, message: `File ${path} written successfully` }
+                const input = toolCall.input as { path?: string; content?: string }
+                console.log('[IPC] write_file input:', input, 'sandboxId:', sandboxId)
+                if (!input.path || !input.content) {
+                  result = { error: `Missing required parameters. Got: ${JSON.stringify(input)}` }
+                  console.error('[IPC] write_file failed: missing parameters')
+                } else {
+                  try {
+                    console.log('[IPC] Writing file to sandbox:', sandboxId, 'path:', input.path, 'content length:', input.content.length)
+                    await sandboxClient.writeFile(sandboxId, input.path, input.content)
+                    result = { success: true, message: `File ${input.path} written successfully` }
+                    console.log('[IPC] File written successfully:', input.path, 'to sandbox:', sandboxId)
+
+                    // Notify renderer to refresh file list
+                    console.log('[IPC] Sending sandbox:files:changed event')
+                    win.webContents.send('sandbox:files:changed', { sandboxId, path: input.path })
+                  } catch (writeErr) {
+                    result = { error: `Failed to write file: ${(writeErr as Error).message}` }
+                    console.error('[IPC] write_file error:', writeErr)
+                  }
+                }
                 break
               }
 
@@ -569,21 +646,49 @@ export function registerIpcHandlers(): void {
 
   // List directory contents in sandbox
   ipcMain.handle('sandbox:listDir', async (_event, projectId: string, path: string): Promise<import('../../shared/types').FileInfo[] | { error: string }> => {
+    console.log('[IPC] sandbox:listDir called:', { projectId, path, projectSandboxesKeys: Array.from(projectSandboxes.keys()) })
     const { client: sandboxClient, error } = await getSandboxClient()
     if (!sandboxClient) {
       return { error: error || 'Sandbox not configured' }
     }
 
-    const sandboxId = projectSandboxes.get(projectId)
+    let sandboxId = projectSandboxes.get(projectId)
+    console.log('[IPC] sandbox:listDir sandboxId:', sandboxId)
     if (!sandboxId) {
       return { error: 'No sandbox found for project' }
     }
 
     try {
-      return await sandboxClient.listDir(sandboxId, path)
+      const result = await sandboxClient.listDir(sandboxId, path)
+      console.log('[IPC] sandbox:listDir returning', result.length, 'entries')
+      return result
     } catch (err) {
-      console.error('[Sandbox] Failed to list directory:', err)
-      return { error: `Failed to list directory: ${(err as Error).message}` }
+      const errorMsg = (err as Error).message
+      console.error('[Sandbox] Failed to list directory:', errorMsg)
+
+      // Check if it's a timeout error - try to recreate sandbox
+      if (errorMsg.includes('timeout') || errorMsg.includes('not found') || errorMsg.includes('unavailable')) {
+        console.log('[Sandbox] Detected timeout/lost sandbox, attempting to recreate...')
+        const result = await ensureSandboxAlive(projectId, sandboxId)
+
+        if (!result.alive) {
+          return { error: 'Sandbox was lost and could not be recreated. Please try again.' }
+        }
+
+        // Update sandboxId if recreated
+        if (result.newSandboxId) {
+          sandboxId = result.newSandboxId
+        }
+
+        // Retry the operation
+        try {
+          return await sandboxClient.listDir(sandboxId, path)
+        } catch (retryErr) {
+          return { error: `Failed after retry: ${(retryErr as Error).message}` }
+        }
+      }
+
+      return { error: `Failed to list directory: ${errorMsg}` }
     }
   })
 

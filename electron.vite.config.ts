@@ -16,6 +16,9 @@ export default defineConfig({
         '@': resolve('src/renderer')
       }
     },
-    plugins: [react(), tailwindcss()]
+    plugins: [react(), tailwindcss()],
+    server: {
+      strictPort: false
+    }
   }
 })

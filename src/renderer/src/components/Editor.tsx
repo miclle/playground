@@ -35,12 +35,12 @@ export function EditorPanel({ filePath, projectId }: EditorPanelProps) {
       setLoading(true)
       try {
         const result = await window.api?.sandbox.readFile(projectId, filePath)
-        if (result && 'error' in result) {
+        // Check if result is an error object
+        if (result && typeof result === 'object' && 'error' in result) {
           console.error('Failed to load file:', result.error)
           setContent(`// Error loading file: ${result.error}`)
-        } else if (result !== undefined) {
-          const fileContent = result as string
-          setContent(fileContent)
+        } else if (typeof result === 'string') {
+          setContent(result)
           // Detect language from file extension
           const ext = filePath.split('.').pop()?.toLowerCase()
           const langMap: Record<string, string> = {

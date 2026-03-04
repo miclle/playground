@@ -66,7 +66,11 @@ export function CenterPanel({
 
         {/* Content */}
         <div className="flex-1 overflow-hidden">
-          {activeTab === 'code' ? <EditorPanel filePath={filePath} projectId={projectId} /> : <Preview />}
+          {activeTab === 'code' ? (
+            <EditorPanel filePath={filePath} projectId={projectId} />
+          ) : (
+            <Preview filePath={filePath} projectId={projectId} />
+          )}
         </div>
       </div>
 
