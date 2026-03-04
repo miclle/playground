@@ -1,12 +1,14 @@
 import { useState, useEffect } from 'react'
-import { X, Key, Cloud, Database, Globe, Loader2 } from 'lucide-react'
+import { X, Key, Cloud, Database, Globe, Loader2, Download, CheckCircle, XCircle, Info, UserCircle, Plus, Trash2 } from 'lucide-react'
 import { cn } from '../lib/utils'
 
 interface SettingsProps {
   onClose: () => void
 }
 
-type SettingsTab = 'ai' | 'sandbox' | 'storage' | 'general'
+type SettingsTab = 'ai' | 'sandbox' | 'storage' | 'general' | 'profiles'
+
+type UpdateStatus = 'idle' | 'checking' | 'available' | 'not-available' | 'downloading' | 'ready' | 'error'
 
 export function Settings({ onClose }: SettingsProps) {
   const [activeTab, setActiveTab] = useState<SettingsTab>('ai')
@@ -29,13 +31,27 @@ export function Settings({ onClose }: SettingsProps) {
   const [storageType, setStorageType] = useState<'local' | 's3' | 'github'>('local')
   const [s3Bucket, setS3Bucket] = useState('')
   const [s3Region, setS3Region] = useState('us-east-1')
+  const [s3AccessKeyId, setS3AccessKeyId] = useState('')
+  const [s3SecretAccessKey, setS3SecretAccessKey] = useState('')
   const [githubToken, setGithubToken] = useState('')
   const [githubRepo, setGithubRepo] = useState('')
+
+  // Updater Settings
+  const [updateStatus, setUpdateStatus] = useState<UpdateStatus>('idle')
+  const [updateVersion, setUpdateVersion] = useState('')
+  const [updateMessage, setUpdateMessage] = useState('')
+
+  // Profile Settings
+  const [profileIds, setProfileIds] = useState<string[]>([])
+  const [activeProfileId, setActiveProfileId] = useState<string | null>(null)
+  const [newProfileName, setNewProfileName] = useState('')
+  const [isCreatingProfile, setIsCreatingProfile] = useState(false)
 
   const tabs = [
     { id: 'ai' as const, label: 'AI Services', icon: Key },
     { id: 'sandbox' as const, label: 'Sandbox', icon: Cloud },
     { id: 'storage' as const, label: 'Storage', icon: Database },
+    { id: 'profiles' as const, label: 'Profiles', icon: UserCircle },
     { id: 'general' as const, label: 'General', icon: Globe }
   ]
 
@@ -75,6 +91,8 @@ export function Settings({ onClose }: SettingsProps) {
         if (storageConfig.s3) {
           setS3Bucket(storageConfig.s3.bucket)
           setS3Region(storageConfig.s3.region)
+          setS3AccessKeyId(storageConfig.s3.accessKeyId || '')
+          setS3SecretAccessKey(storageConfig.s3.secretAccessKey || '')
         }
         if (storageConfig.github) {
           setGithubToken(storageConfig.github.token)
@@ -86,6 +104,174 @@ export function Settings({ onClose }: SettingsProps) {
     }
     setIsLoading(false)
   }
+
+  // Check for updates
+  const handleCheckUpdate = async () => {
+    setUpdateStatus('checking')
+    setUpdateMessage('')
+
+    try {
+      const result = await window.api?.updater.check()
+      if (result?.available) {
+        setUpdateStatus('available')
+        setUpdateVersion(result.version || '')
+        setUpdateMessage(`Version ${result.version} is available!`)
+      } else if (result?.error) {
+        setUpdateStatus('error')
+        setUpdateMessage(result.error)
+      } else {
+        setUpdateStatus('not-available')
+        setUpdateMessage('You are on the latest version')
+      }
+    } catch (err) {
+      setUpdateStatus('error')
+      setUpdateMessage((err as Error).message)
+    }
+  }
+
+  // Download update
+  const handleDownloadUpdate = async () => {
+    setUpdateStatus('downloading')
+    setUpdateMessage('Downloading update...')
+
+    try {
+      const result = await window.api?.updater.download()
+      if (result?.success) {
+        setUpdateStatus('ready')
+        setUpdateMessage('Update downloaded! Restart to install.')
+      } else {
+        setUpdateStatus('error')
+        setUpdateMessage(result?.error || 'Download failed')
+      }
+    } catch (err) {
+      setUpdateStatus('error')
+      setUpdateMessage((err as Error).message)
+    }
+  }
+
+  // Install update
+  const handleInstallUpdate = () => {
+    window.api?.updater.install()
+  }
+
+  // Load profiles
+  const loadProfiles = async () => {
+    try {
+      const ids = await window.api?.profile.listIds()
+      const activeId = await window.api?.profile.getActive()
+      setProfileIds(ids || [])
+      setActiveProfileId(activeId || null)
+    } catch (err) {
+      console.error('Failed to load profiles:', err)
+    }
+  }
+
+  // Create new profile from current settings
+  const handleCreateProfile = async () => {
+    if (!newProfileName.trim()) return
+
+    setIsCreatingProfile(true)
+    try {
+      const profile = {
+        id: `profile-${Date.now()}`,
+        name: newProfileName,
+        ai: {
+          provider: aiProvider,
+          apiKey: aiProvider === 'openai' ? openaiKey : claudeKey,
+          baseUrl: aiProvider === 'openai' ? openaiBaseUrl : claudeBaseUrl
+        },
+        sandbox: {
+          apiKey: sandboxApiKey,
+          baseUrl: sandboxBaseUrl,
+          template: sandboxTemplate
+        },
+        storage: {
+          type: storageType,
+          s3: storageType === 's3' ? {
+            bucket: s3Bucket,
+            region: s3Region
+          } : undefined,
+          github: storageType === 'github' ? {
+            repo: githubRepo
+          } : undefined
+        },
+        createdAt: new Date(),
+        updatedAt: new Date()
+      }
+
+      await window.api?.profile.save(profile)
+      await window.api?.profile.setActive(profile.id)
+      setNewProfileName('')
+      await loadProfiles()
+    } catch (err) {
+      console.error('Failed to create profile:', err)
+      alert('Failed to create profile: ' + (err as Error).message)
+    } finally {
+      setIsCreatingProfile(false)
+    }
+  }
+
+  // Switch profile
+  const handleSwitchProfile = async (profileId: string) => {
+    try {
+      const profile = await window.api?.profile.load(profileId)
+      if (!profile) return
+
+      // Load settings from profile
+      setAiProvider(profile.ai.provider)
+      if (profile.ai.provider === 'openai') {
+        setOpenaiKey(profile.ai.apiKey)
+        setOpenaiBaseUrl(profile.ai.baseUrl || '')
+      } else {
+        setClaudeKey(profile.ai.apiKey)
+        setClaudeBaseUrl(profile.ai.baseUrl || '')
+      }
+
+      setSandboxApiKey(profile.sandbox.apiKey)
+      setSandboxBaseUrl(profile.sandbox.baseUrl || '')
+      setSandboxTemplate(profile.sandbox.template || 'nodejs')
+
+      setStorageType(profile.storage.type)
+      if (profile.storage.type === 's3' && 's3' in profile.storage) {
+        setS3Bucket(profile.storage.s3?.bucket || '')
+        setS3Region(profile.storage.s3?.region || 'us-east-1')
+      }
+      if (profile.storage.type === 'github' && 'github' in profile.storage) {
+        setGithubToken(profile.storage.github?.token || '')
+        setGithubRepo(profile.storage.github?.repo || '')
+      }
+
+      // Set as active
+      await window.api?.profile.setActive(profileId)
+      setActiveProfileId(profileId)
+    } catch (err) {
+      console.error('Failed to switch profile:', err)
+      alert('Failed to switch profile: ' + (err as Error).message)
+    }
+  }
+
+  // Delete profile
+  const handleDeleteProfile = async (profileId: string) => {
+    if (profileId === activeProfileId) {
+      alert('Cannot delete the active profile')
+      return
+    }
+
+    if (!confirm('Are you sure you want to delete this profile?')) return
+
+    try {
+      await window.api?.profile.delete(profileId)
+      await loadProfiles()
+    } catch (err) {
+      console.error('Failed to delete profile:', err)
+      alert('Failed to delete profile: ' + (err as Error).message)
+    }
+  }
+
+  // Load profiles on mount
+  useEffect(() => {
+    loadProfiles()
+  }, [])
 
   const handleSave = async () => {
     setIsSaving(true)
@@ -107,7 +293,12 @@ export function Settings({ onClose }: SettingsProps) {
       // Save Storage config
       await window.api?.config.saveStorage({
         type: storageType,
-        s3: storageType === 's3' ? { bucket: s3Bucket, region: s3Region } : undefined,
+        s3: storageType === 's3' ? {
+          bucket: s3Bucket,
+          region: s3Region,
+          accessKeyId: s3AccessKeyId,
+          secretAccessKey: s3SecretAccessKey
+        } : undefined,
         github: storageType === 'github' ? { token: githubToken, repo: githubRepo } : undefined
       })
 
@@ -297,6 +488,26 @@ export function Settings({ onClose }: SettingsProps) {
                         placeholder="us-east-1"
                       />
                     </div>
+                    <div>
+                      <label className="block text-xs text-muted-foreground mb-1">Access Key ID</label>
+                      <input
+                        type="text"
+                        value={s3AccessKeyId}
+                        onChange={(e) => setS3AccessKeyId(e.target.value)}
+                        className="w-full px-3 py-2 bg-muted/50 border border-border rounded text-sm focus:outline-none focus:ring-1 focus:ring-primary"
+                        placeholder="AKIAIOSFODNN7EXAMPLE"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-muted-foreground mb-1">Secret Access Key</label>
+                      <input
+                        type="password"
+                        value={s3SecretAccessKey}
+                        onChange={(e) => setS3SecretAccessKey(e.target.value)}
+                        className="w-full px-3 py-2 bg-muted/50 border border-border rounded text-sm focus:outline-none focus:ring-1 focus:ring-primary"
+                        placeholder="wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+                      />
+                    </div>
                   </>
                 )}
 
@@ -325,6 +536,102 @@ export function Settings({ onClose }: SettingsProps) {
                   </>
                 )}
               </div>
+            ) : activeTab === 'profiles' ? (
+              <div className="space-y-4">
+                <div>
+                  <h3 className="text-sm font-medium mb-3">Configuration Profiles</h3>
+                  <p className="text-xs text-muted-foreground mb-4">
+                    Save your current configuration as a profile for easy switching later.
+                  </p>
+                </div>
+
+                {/* Create new profile */}
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={newProfileName}
+                    onChange={(e) => setNewProfileName(e.target.value)}
+                    className="flex-1 px-3 py-2 bg-muted/50 border border-border rounded text-sm focus:outline-none focus:ring-1 focus:ring-primary"
+                    placeholder="New profile name..."
+                    onKeyPress={(e) => e.key === 'Enter' && handleCreateProfile()}
+                  />
+                  <button
+                    onClick={handleCreateProfile}
+                    disabled={!newProfileName.trim() || isCreatingProfile}
+                    className="px-4 py-2 text-sm bg-primary text-primary-foreground rounded hover:bg-primary/90 transition-colors disabled:opacity-50 flex items-center gap-2"
+                  >
+                    {isCreatingProfile ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+                    Save Current
+                  </button>
+                </div>
+
+                {/* Profile list */}
+                <div className="space-y-2">
+                  {profileIds.length === 0 ? (
+                    <div className="text-center py-8 text-sm text-muted-foreground">
+                      <UserCircle className="h-10 w-10 mx-auto mb-2 opacity-50" />
+                      <p>No profiles yet</p>
+                      <p className="text-xs mt-1">Create a profile to save your current settings</p>
+                    </div>
+                  ) : (
+                    profileIds.map((id) => {
+                      // Extract name from ID or display as is
+                      const displayName = id.replace('profile-', '').replace(/-\d+$/, '') || id
+                      const isActive = id === activeProfileId
+
+                      return (
+                        <div
+                          key={id}
+                          className={cn(
+                            'flex items-center justify-between px-3 py-2 rounded border',
+                            isActive
+                              ? 'bg-primary/10 border-primary'
+                              : 'bg-muted/30 border-border hover:bg-muted/50'
+                          )}
+                        >
+                          <div className="flex items-center gap-2">
+                            <UserCircle className={cn(
+                              'h-4 w-4',
+                              isActive ? 'text-primary' : 'text-muted-foreground'
+                            )} />
+                            <span className={cn(
+                              'text-sm',
+                              isActive ? 'font-medium text-foreground' : 'text-muted-foreground'
+                            )}>
+                              {displayName}
+                            </span>
+                            {isActive && (
+                              <span className="text-xs bg-primary/20 text-primary px-2 py-0.5 rounded">
+                                Active
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-1">
+                            {!isActive && (
+                              <>
+                                <button
+                                  onClick={() => handleSwitchProfile(id)}
+                                  className="p-1 hover:bg-accent rounded text-xs text-muted-foreground hover:text-foreground"
+                                  title="Switch to this profile"
+                                >
+                                  Switch
+                                </button>
+                                <button
+                                  onClick={() => handleDeleteProfile(id)}
+                                  className="p-1 hover:bg-destructive/20 rounded text-muted-foreground hover:text-destructive"
+                                  title="Delete profile"
+                                >
+                                  <Trash2 className="h-3 w-3" />
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      )
+                    })
+                  )}
+                </div>
+              </div>
             ) : (
               <div className="space-y-4">
                 <div className="text-sm text-muted-foreground">
@@ -338,6 +645,83 @@ export function Settings({ onClose }: SettingsProps) {
                       GitHub Repository
                     </button>
                   </p>
+                </div>
+
+                {/* Update Section */}
+                <div className="pt-4 border-t border-border">
+                  <h3 className="text-sm font-medium mb-3">Updates</h3>
+                  <div className="space-y-3">
+                    {updateStatus === 'idle' && (
+                      <button
+                        onClick={handleCheckUpdate}
+                        className="w-full px-4 py-2 text-sm bg-primary text-primary-foreground rounded hover:bg-primary/90 transition-colors flex items-center justify-center gap-2"
+                      >
+                        <Download className="h-4 w-4" />
+                        Check for Updates
+                      </button>
+                    )}
+                    {updateStatus === 'checking' && (
+                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Checking for updates...
+                      </div>
+                    )}
+                    {updateStatus === 'not-available' && (
+                      <div className="flex items-center gap-2 text-sm text-green-600">
+                        <CheckCircle className="h-4 w-4" />
+                        {updateMessage || 'You are on the latest version'}
+                      </div>
+                    )}
+                    {updateStatus === 'available' && (
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-2 text-sm text-blue-600">
+                          <Info className="h-4 w-4" />
+                          {updateMessage}
+                        </div>
+                        <button
+                          onClick={handleDownloadUpdate}
+                          className="w-full px-4 py-2 text-sm bg-primary text-primary-foreground rounded hover:bg-primary/90 transition-colors flex items-center justify-center gap-2"
+                        >
+                          <Download className="h-4 w-4" />
+                          Download Update
+                        </button>
+                      </div>
+                    )}
+                    {updateStatus === 'downloading' && (
+                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Downloading update...
+                      </div>
+                    )}
+                    {updateStatus === 'ready' && (
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-2 text-sm text-green-600">
+                          <CheckCircle className="h-4 w-4" />
+                          {updateMessage}
+                        </div>
+                        <button
+                          onClick={handleInstallUpdate}
+                          className="w-full px-4 py-2 text-sm bg-green-600 text-white rounded hover:bg-green-700 transition-colors"
+                        >
+                          Restart & Install
+                        </button>
+                      </div>
+                    )}
+                    {updateStatus === 'error' && (
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-2 text-sm text-destructive">
+                          <XCircle className="h-4 w-4" />
+                          {updateMessage || 'Failed to check for updates'}
+                        </div>
+                        <button
+                          onClick={handleCheckUpdate}
+                          className="text-sm text-primary hover:underline"
+                        >
+                          Try again
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             )}

@@ -315,6 +315,7 @@ function App() {
           <FileTree
             hasProject={!!currentProject}
             projectName={currentProject?.name}
+            projectId={currentProject?.id}
             files={projectFiles}
             onFileSelect={handleFileSelect}
             onRefresh={handleRefreshFiles}

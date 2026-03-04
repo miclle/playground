@@ -7,7 +7,9 @@ import {
   FolderOpen,
   Plus,
   RefreshCw,
-  FileCode
+  FileCode,
+  Download,
+  Loader2
 } from 'lucide-react'
 import { cn } from '../lib/utils'
 
@@ -21,6 +23,7 @@ interface FileNode {
 interface FileTreeProps {
   hasProject: boolean
   projectName?: string
+  projectId?: string
   files?: FileNode[]
   onFileSelect?: (file: FileNode) => void
   onRefresh?: () => void
@@ -30,13 +33,17 @@ interface FileTreeProps {
 function FileTreeNode({
   node,
   depth = 0,
-  onFileSelect
+  onFileSelect,
+  onExport
 }: {
   node: FileNode
   depth?: number
   onFileSelect?: (file: FileNode) => void
+  onExport?: (node: FileNode) => void
 }) {
   const [isOpen, setIsOpen] = useState(false)
+  const [showMenu, setShowMenu] = useState(false)
+  const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null>(null)
   const hasChildren = node.type === 'folder' && node.children?.length
 
   const handleClick = () => {
@@ -44,6 +51,22 @@ function FileTreeNode({
       setIsOpen(!isOpen)
     } else if (node.type === 'file' && onFileSelect) {
       onFileSelect(node)
+    }
+  }
+
+  const handleContextMenu = (e: React.MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    if (node.type === 'file') {
+      setMenuPosition({ x: e.clientX, y: e.clientY })
+      setShowMenu(true)
+    }
+  }
+
+  const handleExport = () => {
+    setShowMenu(false)
+    if (onExport && node.type === 'file') {
+      onExport(node)
     }
   }
 
@@ -77,6 +100,7 @@ function FileTreeNode({
         )}
         style={{ paddingLeft: depth * 12 + 8 }}
         onClick={handleClick}
+        onContextMenu={handleContextMenu}
       >
         {hasChildren ? (
           isOpen ? (
@@ -96,7 +120,7 @@ function FileTreeNode({
         ) : (
           getFileIcon(node.name)
         )}
-        <span>{node.name}</span>
+        <span className="flex-1 truncate">{node.name}</span>
       </div>
       {hasChildren && isOpen && (
         <div>
@@ -106,15 +130,69 @@ function FileTreeNode({
               node={child}
               depth={depth + 1}
               onFileSelect={onFileSelect}
+              onExport={onExport}
             />
           ))}
         </div>
+      )}
+      {showMenu && menuPosition && (
+        <div
+          className="fixed z-50 bg-popover border border-border rounded-md shadow-lg py-1 min-w-[120px]"
+          style={{ left: menuPosition.x, top: menuPosition.y }}
+          onContextMenu={(e) => e.preventDefault()}
+        >
+          <button
+            onClick={handleExport}
+            className="w-full px-3 py-1.5 text-sm text-left hover:bg-accent flex items-center gap-2"
+          >
+            <Download className="h-4 w-4" />
+            Export
+          </button>
+        </div>
+      )}
+      {showMenu && (
+        <div
+          className="fixed inset-0 z-40"
+          onClick={() => setShowMenu(false)}
+        />
       )}
     </div>
   )
 }
 
-export function FileTree({ hasProject, projectName, files = [], onFileSelect, onRefresh, onNewFile }: FileTreeProps) {
+export function FileTree({
+  hasProject,
+  projectName,
+  projectId,
+  files = [],
+  onFileSelect,
+  onRefresh,
+  onNewFile
+}: FileTreeProps) {
+  const [exporting, setExporting] = useState<string | null>(null)
+  const [exportMessage, setExportMessage] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
+
+  const handleExport = async (node: FileNode) => {
+    if (!projectId) return
+
+    setExporting(node.path)
+    setExportMessage(null)
+
+    try {
+      const result = await window.api?.storage.export(projectId, node.path, node.name)
+      if (result?.success) {
+        setExportMessage({ type: 'success', message: `Exported to ${result.url || 'storage'}` })
+      } else {
+        setExportMessage({ type: 'error', message: result?.error || 'Export failed' })
+      }
+    } catch (err) {
+      setExportMessage({ type: 'error', message: (err as Error).message })
+    } finally {
+      setExporting(null)
+      setTimeout(() => setExportMessage(null), 3000)
+    }
+  }
+
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
@@ -142,6 +220,16 @@ export function FileTree({ hasProject, projectName, files = [], onFileSelect, on
         )}
       </div>
 
+      {/* Export message toast */}
+      {exportMessage && (
+        <div className={cn(
+          'mx-2 mt-2 px-3 py-2 text-xs rounded flex items-center gap-2',
+          exportMessage.type === 'success' ? 'bg-green-500/20 text-green-600' : 'bg-destructive/20 text-destructive'
+        )}>
+          {exportMessage.message}
+        </div>
+      )}
+
       {/* File tree */}
       <div className="flex-1 overflow-auto py-2">
         {!hasProject ? (
@@ -158,7 +246,12 @@ export function FileTree({ hasProject, projectName, files = [], onFileSelect, on
           </div>
         ) : (
           files.map((node) => (
-            <FileTreeNode key={node.path} node={node} onFileSelect={onFileSelect} />
+            <FileTreeNode
+              key={node.path}
+              node={node}
+              onFileSelect={onFileSelect}
+              onExport={handleExport}
+            />
           ))
         )}
       </div>

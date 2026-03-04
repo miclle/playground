@@ -22,8 +22,16 @@ export interface IpcApi {
     loadAI: () => Promise<{ provider: string; apiKey: string; baseUrl?: string; model?: string } | null>
     saveSandbox: (data: { apiKey: string; baseUrl?: string; template?: string }) => Promise<void>
     loadSandbox: () => Promise<{ apiKey: string; baseUrl?: string; template?: string } | null>
-    saveStorage: (data: { type: string; s3?: { bucket: string; region: string }; github?: { token: string; repo: string } }) => Promise<void>
-    loadStorage: () => Promise<{ type: string; s3?: { bucket: string; region: string }; github?: { token: string; repo: string } } | null>
+    saveStorage: (data: {
+      type: string
+      s3?: { bucket: string; region: string; accessKeyId?: string; secretAccessKey?: string }
+      github?: { token: string; repo: string }
+    }) => Promise<void>
+    loadStorage: () => Promise<{
+      type: string
+      s3?: { bucket: string; region: string; accessKeyId?: string; secretAccessKey?: string }
+      github?: { token: string; repo: string }
+    } | null>
   }
 
   // Project operations
@@ -55,6 +63,32 @@ export interface IpcApi {
     listDir: (projectId: string, path: string) => Promise<import('../shared/types').FileInfo[] | { error: string }>
     readFile: (projectId: string, path: string) => Promise<string | { error: string }>
     onFilesChanged: (callback: (data: { sandboxId: string; path: string }) => void) => () => void
+  }
+
+  // Storage operations
+  storage: {
+    export: (projectId: string, sandboxPath: string, artifactName?: string) => Promise<{ success: boolean; url?: string; error?: string }>
+    list: (filter?: { prefix?: string; limit?: number }) => Promise<import('../shared/types').Artifact[]>
+    get: (id: string) => Promise<import('../shared/types').Artifact | null>
+    delete: (id: string) => Promise<{ success: boolean; error?: string }>
+  }
+
+  // Updater operations
+  updater: {
+    check: () => Promise<{ available: boolean; version?: string; error?: string }>
+    download: () => Promise<{ success: boolean; error?: string }>
+    install: () => Promise<void>
+    cancel: () => Promise<void>
+  }
+
+  // Profile operations
+  profile: {
+    save: (profile: import('../main/services/config').Profile) => Promise<void>
+    load: (id: string) => Promise<import('../main/services/config').Profile | null>
+    delete: (id: string) => Promise<void>
+    listIds: () => Promise<string[]>
+    getActive: () => Promise<string | null>
+    setActive: (id: string) => Promise<void>
   }
 }
 
@@ -124,6 +158,32 @@ const api: IpcApi = {
       ipcRenderer.on('sandbox:files:changed', handler)
       return () => ipcRenderer.removeListener('sandbox:files:changed', handler)
     }
+  },
+
+  // Storage operations
+  storage: {
+    export: (projectId, sandboxPath, artifactName) => ipcRenderer.invoke('storage:export', projectId, sandboxPath, artifactName),
+    list: (filter) => ipcRenderer.invoke('storage:list', filter),
+    get: (id) => ipcRenderer.invoke('storage:get', id),
+    delete: (id) => ipcRenderer.invoke('storage:delete', id)
+  },
+
+  // Updater operations
+  updater: {
+    check: () => ipcRenderer.invoke('updater:check'),
+    download: () => ipcRenderer.invoke('updater:download'),
+    install: () => ipcRenderer.invoke('updater:install'),
+    cancel: () => ipcRenderer.invoke('updater:cancel')
+  },
+
+  // Profile operations
+  profile: {
+    save: (profile) => ipcRenderer.invoke('profile:save', profile),
+    load: (id) => ipcRenderer.invoke('profile:load', id),
+    delete: (id) => ipcRenderer.invoke('profile:delete', id),
+    listIds: () => ipcRenderer.invoke('profile:listIds'),
+    getActive: () => ipcRenderer.invoke('profile:getActive'),
+    setActive: (id) => ipcRenderer.invoke('profile:setActive', id)
   }
 }
 

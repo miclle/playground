@@ -1,11 +1,14 @@
-import { ipcMain, shell, BrowserWindow } from 'electron'
+import { ipcMain, shell, BrowserWindow, app } from 'electron'
 import * as db from '../database'
 import * as config from '../services/config'
 import { createAIService } from '../services/ai'
 import { createSandboxClient } from '../services/sandbox'
+import { createStorageBackend } from '../services/storage'
+import { updaterService } from '../services/updater'
 import type { AIConfig } from '../services/ai/types'
 import type { Project, Session, Message, ChatEvent } from '../../shared/types'
 import type { ToolDefinition } from '../../shared/types'
+import type { Artifact } from '../../shared/types'
 
 // Sandbox tools definition
 const SANDBOX_TOOLS: ToolDefinition[] = [
@@ -492,9 +495,19 @@ export function registerIpcHandlers(): void {
   })
 
   // Save storage config
-  ipcMain.handle('config:save:storage', async (_event, data: { type: string; s3?: { bucket: string; region: string }; github?: { token: string; repo: string } }): Promise<void> => {
+  ipcMain.handle('config:save:storage', async (_event, data: {
+    type: string
+    s3?: { bucket: string; region: string; accessKeyId?: string; secretAccessKey?: string }
+    github?: { token: string; repo: string }
+  }): Promise<void> => {
     if (data.github?.token) {
       await config.storeApiKey('github_main', data.github.token)
+    }
+    if (data.s3?.accessKeyId) {
+      await config.storeApiKey('s3_accessKeyId', data.s3.accessKeyId)
+    }
+    if (data.s3?.secretAccessKey) {
+      await config.storeApiKey('s3_secretAccessKey', data.s3.secretAccessKey)
     }
     db.setSetting('storage_config', JSON.stringify({
       type: data.type,
@@ -504,7 +517,11 @@ export function registerIpcHandlers(): void {
   })
 
   // Load storage config
-  ipcMain.handle('config:load:storage', async (): Promise<{ type: string; s3?: { bucket: string; region: string }; github?: { token: string; repo: string } } | null> => {
+  ipcMain.handle('config:load:storage', async (): Promise<{
+    type: string
+    s3?: { bucket: string; region: string; accessKeyId?: string; secretAccessKey?: string }
+    github?: { token: string; repo: string }
+  } | null> => {
     const configStr = db.getSetting('storage_config')
     if (!configStr) return null
 
@@ -513,6 +530,12 @@ export function registerIpcHandlers(): void {
       if (configData.github) {
         const token = await config.getApiKey('github_main')
         configData.github.token = token || ''
+      }
+      if (configData.s3) {
+        const accessKeyId = await config.getApiKey('s3_accessKeyId')
+        const secretAccessKey = await config.getApiKey('s3_secretAccessKey')
+        configData.s3.accessKeyId = accessKeyId || ''
+        configData.s3.secretAccessKey = secretAccessKey || ''
       }
       return configData
     } catch {
@@ -715,5 +738,209 @@ export function registerIpcHandlers(): void {
   // Reset sandbox client when config changes
   ipcMain.handle('sandbox:resetClient', async (): Promise<void> => {
     resetSandboxClient()
+  })
+
+  // ============ Storage Handlers ============
+
+  let globalStorageBackend: ReturnType<typeof createStorageBackend> | null = null
+
+  // Get or create storage backend
+  async function getStorageBackend(): Promise<{ backend: ReturnType<typeof createStorageBackend> | null; error: string | null }> {
+    if (globalStorageBackend) {
+      return { backend: globalStorageBackend, error: null }
+    }
+
+    const storageConfigStr = db.getSetting('storage_config')
+    if (!storageConfigStr) {
+      return { backend: null, error: 'Storage not configured' }
+    }
+
+    try {
+      const storageConfigData = JSON.parse(storageConfigStr)
+
+      // Build full config based on type
+      if (storageConfigData.type === 'local') {
+        // Local storage needs a base path - use app data directory
+        const path = await app.getPath('userData')
+        return {
+          backend: createStorageBackend({
+            type: 'local',
+            basePath: `${path}/artifacts`
+          })
+        }
+      }
+
+      if (storageConfigData.type === 's3') {
+        // Get S3 credentials from secure storage
+        const accessKeyId = await config.getApiKey('s3_accessKeyId')
+        const secretAccessKey = await config.getApiKey('s3_secretAccessKey')
+        if (!accessKeyId || !secretAccessKey) {
+          return { backend: null, error: 'S3 credentials not configured' }
+        }
+        return {
+          backend: createStorageBackend({
+            type: 's3',
+            bucket: storageConfigData.s3?.bucket || '',
+            region: storageConfigData.s3?.region || 'us-east-1',
+            accessKeyId,
+            secretAccessKey
+          })
+        }
+      }
+
+      if (storageConfigData.type === 'github') {
+        const token = await config.getApiKey('github_main')
+        if (!token) {
+          return { backend: null, error: 'GitHub token not configured' }
+        }
+        // Parse repo string "owner/repo"
+        const [owner, repo] = (storageConfigData.github?.repo || '').split('/')
+        return {
+          backend: createStorageBackend({
+            type: 'github',
+            token,
+            owner: owner || '',
+            repo: repo || ''
+          })
+        }
+      }
+
+      return { backend: null, error: `Unknown storage type: ${storageConfigData.type}` }
+    } catch (err) {
+      console.error('[Storage] Failed to create backend:', err)
+      return { backend: null, error: (err as Error).message }
+    }
+  }
+
+  // Reset storage backend (call when config changes)
+  function resetStorageBackend(): void {
+    globalStorageBackend = null
+  }
+
+  // Export file from sandbox to storage
+  ipcMain.handle('storage:export', async (_event, projectId: string, sandboxPath: string, artifactName?: string): Promise<{ success: boolean; url?: string; error?: string }> => {
+    console.log('[Storage] Exporting file:', { projectId, sandboxPath, artifactName })
+
+    const { client: sandboxClient, error: sandboxError } = await getSandboxClient()
+    if (!sandboxClient) {
+      return { success: false, error: sandboxError || 'Sandbox not available' }
+    }
+
+    const sandboxId = projectSandboxes.get(projectId)
+    if (!sandboxId) {
+      return { success: false, error: 'No sandbox found for project' }
+    }
+
+    const { backend: storage, error: storageError } = await getStorageBackend()
+    if (!storage) {
+      return { success: false, error: storageError || 'Storage not available' }
+    }
+
+    try {
+      // Read file from sandbox
+      const content = await sandboxClient.readFile(sandboxId, sandboxPath)
+
+      // Create artifact
+      const name = artifactName || sandboxPath.split('/').pop() || 'artifact'
+      const artifact: Artifact = {
+        id: `${projectId}-${sandboxPath}`,
+        name,
+        path: sandboxPath,
+        content,
+        size: content.length,
+        createdAt: new Date()
+      }
+
+      // Save to storage
+      const result = await storage.save(artifact)
+      console.log('[Storage] Export result:', result)
+
+      return {
+        success: result.success,
+        url: result.url,
+        error: result.error
+      }
+    } catch (err) {
+      console.error('[Storage] Export failed:', err)
+      return { success: false, error: (err as Error).message }
+    }
+  })
+
+  // List artifacts in storage
+  ipcMain.handle('storage:list', async (_event, filter?: { prefix?: string; limit?: number }): Promise<Artifact[]> => {
+    const { backend: storage } = await getStorageBackend()
+    if (!storage) {
+      return []
+    }
+
+    try {
+      return await storage.list(filter)
+    } catch {
+      return []
+    }
+  })
+
+  // Get artifact from storage
+  ipcMain.handle('storage:get', async (_event, id: string): Promise<Artifact | null> => {
+    const { backend: storage } = await getStorageBackend()
+    if (!storage) {
+      return null
+    }
+
+    try {
+      return await storage.get(id)
+    } catch {
+      return null
+    }
+  })
+
+  // Delete artifact from storage
+  ipcMain.handle('storage:delete', async (_event, id: string): Promise<{ success: boolean; error?: string }> => {
+    const { backend: storage } = await getStorageBackend()
+    if (!storage) {
+      return { success: false, error: 'Storage not available' }
+    }
+
+    try {
+      await storage.delete(id)
+      return { success: true }
+    } catch (err) {
+      return { success: false, error: (err as Error).message }
+    }
+  })
+
+  // ============ Updater Handlers ============
+
+  // Check for updates
+  ipcMain.handle('updater:check', async (): Promise<{ available: boolean; version?: string; error?: string }> => {
+    try {
+      const info = await updaterService.checkForUpdates()
+      if (info) {
+        return { available: true, version: info.version }
+      }
+      return { available: false }
+    } catch (err) {
+      return { available: false, error: (err as Error).message }
+    }
+  })
+
+  // Download update
+  ipcMain.handle('updater:download', async (): Promise<{ success: boolean; error?: string }> => {
+    try {
+      const success = await updaterService.downloadUpdate()
+      return { success }
+    } catch (err) {
+      return { success: false, error: (err as Error).message }
+    }
+  })
+
+  // Install update (quit and install)
+  ipcMain.handle('updater:install', async (): Promise<void> => {
+    updaterService.quitAndInstall()
+  })
+
+  // Cancel update download
+  ipcMain.handle('updater:cancel', async (): Promise<void> => {
+    updaterService.cancelDownload()
   })
 }
