@@ -214,7 +214,7 @@ export function ChatPanel({ onOpenSettings, hasProject, projectId, onFilesChange
   if (!hasProject) {
     return (
       <div className="flex flex-col h-full">
-        <div className="px-3 py-2 border-b border-border">
+        <div className="flex items-center h-9 px-3 border-b border-border">
           <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
             AI Agent
           </span>
@@ -233,7 +233,7 @@ export function ChatPanel({ onOpenSettings, hasProject, projectId, onFilesChange
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
-      <div className="px-3 py-2 border-b border-border">
+      <div className="flex items-center h-9 px-3 border-b border-border">
         <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
           AI Agent
         </span>

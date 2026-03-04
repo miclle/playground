@@ -38,11 +38,11 @@ export function CenterPanel({
       {/* 上半部分：代码/Preview */}
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Tab bar */}
-        <div className="flex items-center border-b border-border bg-muted/30">
+        <div className="flex items-center h-9 px-3 border-b border-border bg-muted/30">
           <button
             onClick={() => setActiveTab('code')}
             className={cn(
-              'flex items-center gap-1.5 px-4 py-2 text-sm border-b-2 transition-colors',
+              'flex items-center gap-1.5 px-2 h-full text-sm border-b-2 -ml-2 transition-colors',
               activeTab === 'code'
                 ? 'border-primary text-foreground'
                 : 'border-transparent text-muted-foreground hover:text-foreground'
@@ -54,7 +54,7 @@ export function CenterPanel({
           <button
             onClick={() => setActiveTab('preview')}
             className={cn(
-              'flex items-center gap-1.5 px-4 py-2 text-sm border-b-2 transition-colors',
+              'flex items-center gap-1.5 px-2 h-full text-sm border-b-2 transition-colors',
               activeTab === 'preview'
                 ? 'border-primary text-foreground'
                 : 'border-transparent text-muted-foreground hover:text-foreground'
